@@ -5,8 +5,8 @@ import os
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "src"))
 
 from PyQt6.QtWidgets import QApplication
-from core.database import init_db
-from core.engine import DepEdValidator
+from database import init_db
+from engine import DepEdValidator
 from ui.main_window import MainWindow
 
 def main():
