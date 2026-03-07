@@ -282,6 +282,7 @@ class MainWindow(QMainWindow):
         grid.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         grid.verticalHeader().setDefaultSectionSize(35) # Compact rows
         grid.verticalHeader().setFixedWidth(60) # Compact time column
+        grid.setShowGrid(False) # Hide default grid lines for card-like look
 
     # --- ACTION METHODS ---
 
@@ -390,6 +391,15 @@ class MainWindow(QMainWindow):
             else:
                 QMessageBox.warning(self, "Update Failed", "Could not update name in database.")
 
+    def _exec_with_blur(self, dialog):
+        """Helper to execute a dialog with a background blur effect."""
+        blur = QGraphicsBlurEffect()
+        blur.setBlurRadius(10)
+        self.central_widget.setGraphicsEffect(blur)
+        res = dialog.exec()
+        self.central_widget.setGraphicsEffect(None)
+        return res
+
     def undo_last_delete(self):
         """Restores the last batch of deleted people."""
         if not self.undo_stack: return
@@ -434,7 +444,7 @@ class MainWindow(QMainWindow):
             
         # 3. Open Dialog
         dlg = PersonScheduleDialog(self.engine, person_id, name, self)
-        dlg.exec()
+        self._exec_with_blur(dlg)
 
     def on_person_double_clicked(self, row, col):
         """Handles clicking a user: Checks overload and shows schedule."""
@@ -673,13 +683,13 @@ class MainWindow(QMainWindow):
 
     def open_add_person_dialog(self):
         d = AddPersonDialog(self)
-        if d.exec() and self.engine.add_person(d.get_data()['name']):
+        if self._exec_with_blur(d) and self.engine.add_person(d.get_data()['name']):
             self.refresh_all()
 
     def open_add_class_dialog(self):
         """Adds a new class to the dropdown list."""
         d = AddClassDialog(self)
-        if d.exec():
+        if self._exec_with_blur(d):
             data = d.get_data()
             grade = data['grade']
             section = data['section']
@@ -708,7 +718,7 @@ class MainWindow(QMainWindow):
         all_options = list(self.known_classes) + ["Grade 11", "Grade 12"]
         d = AddScheduleDialog(p_list, available_classes=all_options, parent=self)
         
-        if d.exec():
+        if self._exec_with_blur(d):
             res = d.get_data()
             if res is None: 
                 return

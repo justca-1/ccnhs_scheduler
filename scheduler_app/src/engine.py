@@ -61,6 +61,22 @@ class ScheduleEngine:
 
     # --- SCHEDULE MANAGEMENT ---
 
+    def can_assign(self, person_id: int, day: str, start: str, end: str) -> bool:
+        """
+        Checks if a person is free during the requested time slot.
+        Returns True if assignment is possible (no overlap), False otherwise.
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                # Overlap logic: (StartA < EndB) and (EndA > StartB)
+                query = "SELECT COUNT(*) FROM Schedule WHERE person_id = ? AND day = ? AND start_time < ? AND end_time > ?"
+                cursor.execute(query, (person_id, day, end, start))
+                return cursor.fetchone()[0] == 0
+        except sqlite3.Error as e:
+            print(f"Conflict Check Error: {e}")
+            return False
+
     def add_schedule(self, person_id: int, day: str, start: str, end: str, grade_level: str, subject: str = "") -> bool:
         try:
             with sqlite3.connect(self.db_path) as conn:
