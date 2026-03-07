@@ -1,2 +1,1 @@
-PyQt6==6.6.1
-pytest==7.4.3
+PyQt6

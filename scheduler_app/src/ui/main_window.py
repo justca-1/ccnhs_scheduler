@@ -230,14 +230,13 @@ class MainWindow(QMainWindow):
 
     def init_schedule_grid_ui(self):
         """Bottom section for the Weekly Matrix."""
-        self.grids = {}
         self.grade_views = {} # Stores { 'Grade 7': {'combo': ..., 'grid': ...}, ... }
         
         self.time_slots = [f"{h:02d}:{m:02d}" for h in range(6, 19) for m in (0, 30)]
         days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
         
-        # 1. Junior High (Grade 7-10) with Dropdowns
-        for i in range(7, 11):
+        # 1. All Grades (Grade 7-12) with Dropdowns
+        for i in range(7, 13):
             grade_name = f"Grade {i}"
             
             container = QWidget()
@@ -262,16 +261,6 @@ class MainWindow(QMainWindow):
             self.main_stack.addWidget(container)
             
             self.grade_views[grade_name] = {'combo': combo, 'grid': grid}
-
-        # 2. Senior High (Keep separate for now)
-        senior_grades = ["Grade 11", "Grade 12"]
-        
-        for grade in senior_grades:
-            grid = QTableWidget()
-            self._setup_grid(grid, days, self.time_slots)
-            
-            self.main_stack.addWidget(grid)
-            self.grids[grade] = grid
 
     def _setup_grid(self, grid, days, time_slots):
         """Helper to configure a schedule table widget."""
@@ -502,13 +491,17 @@ class MainWindow(QMainWindow):
         self.people_table.blockSignals(False)
 
         # --- 2. REFRESH SCHEDULE GRID ---
+        # Fix: Populate known_classes from DB to ensure persistence
+        db_classes = self.engine.get_unique_grade_levels()
+        self.known_classes.update(db_classes)
+
         # Get the detailed map: {(Day, Time): [info_dict1, info_dict2]}
         s_map = self.engine.get_weekly_schedule_map()
         days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
         
         # 1. Update Known Classes & Distribute to Grades
         # We categorize classes into buckets: "Grade 7", "Grade 8", etc.
-        grade_buckets = { f"Grade {i}": set() for i in range(7, 11) }
+        grade_buckets = { f"Grade {i}": set() for i in range(7, 13) }
         
         all_classes = set(self.known_classes)
         for infos in s_map.values():
@@ -519,18 +512,21 @@ class MainWindow(QMainWindow):
 
         for c_name in all_classes:
             # Simple heuristic to assign class to a grade bucket
-            for i in range(7, 11):
+            for i in range(7, 13):
                 # Matches "Grade 7", "7-A", "7-Rizal", etc.
                 if c_name.startswith(str(i)) or c_name.startswith(f"Grade {i}"):
-                    grade_buckets[f"Grade {i}"].add(c_name)
+                    if f"Grade {i}" in grade_buckets:
+                        grade_buckets[f"Grade {i}"].add(c_name)
                     break
         
-        # 2. Update Dropdowns for 7-10
+        conflict_count = 0 # Counter for our Status Bar UX
+
+        # 2. Update Dropdowns for 7-12
         for grade, data in self.grade_views.items():
             combo = data['combo']
             current = combo.currentText()
             
-            items = sorted(list(grade_buckets[grade]))
+            items = sorted(list(grade_buckets.get(grade, [])))
             
             combo.blockSignals(True)
             combo.clear()
@@ -542,88 +538,8 @@ class MainWindow(QMainWindow):
                 combo.setCurrentIndex(0)
             combo.blockSignals(False)
             
-            # Refresh this specific grid
-            self.refresh_grade_grid(grade)
-        
-        conflict_count = 0 # Counter for our Status Bar UX
-
-        # Loop through EACH Grade Tab
-        for grade_name, grid in self.grids.items():
-            
-            # Loop through every cell in the grid
-            for row, t_val in enumerate(self.time_slots):
-                for col, d_val in enumerate(days):
-                    # Retrieve list of people busy at this (Day, Time)
-                    all_infos = s_map.get((d_val, t_val), [])
-                    
-                    # FILTER: Only show schedules for this tab's grade level
-                    busy_infos = [info for info in all_infos if info.get('grade_level') == grade_name]
-                    
-                    # Create the display text (Names separated by commas)
-                    names = []
-                    for info in busy_infos:
-                        txt = info['name']
-                        if info['subject']:
-                            txt += f" ({info['subject']})"
-                        names.append(txt)
-                    display_text = ", ".join(names) if names else ""
-                    
-                    item = QTableWidgetItem(display_text)
-                    item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                    item.setFlags(item.flags() ^ Qt.ItemFlag.ItemIsEditable)
-
-                    # Check for Cross-Grade Conflicts (Same person, different grade, same time)
-                    person_conflict = False
-                    conflict_details = []
-                    
-                    for p in busy_infos:
-                        # Find occurrences of this person in OTHER grades at this specific time slot
-                        other_bookings = [
-                            x for x in all_infos 
-                            if x['name'] == p['name'] and x['grade_level'] != grade_name
-                        ]
-                        if other_bookings:
-                            person_conflict = True
-                            grades = ", ".join([x['grade_level'] for x in other_bookings])
-                            conflict_details.append(f"{p['name']} is also in {grades}")
-
-                    # --- UX: COLORS & TOOLTIPS ---
-                    if len(busy_infos) > 1 or person_conflict:
-                        # CONFLICT: High contrast orange/red to stand out against the green
-                        item.setBackground(QBrush(QColor("#FF7043"))) 
-                        item.setForeground(QBrush(QColor("white")))
-                        
-                        if person_conflict:
-                            item.setText("⚠️ Double Booked")
-                            tip = "⚠️ PERSON CONFLICT:\n" + "\n".join(conflict_details)
-                            if len(busy_infos) > 1:
-                                tip += "\n\n⚠️ MULTIPLE PEOPLE HERE:\n" + ", ".join(names)
-                            item.setToolTip(tip)
-                        else:
-                            # Construct Tooltip for Conflicts
-                            tip = "⚠️ CONFLICT DETECTED:\n"
-                            for info in busy_infos:
-                                tip += f"• {info['name']} ({info['role']}) | {info['range']}\n"
-                            item.setToolTip(tip.strip())
-                        
-                        conflict_count += 1
-                        
-                    elif len(busy_infos) == 1:
-                        # BUSY STATE
-                        info = busy_infos[0]
-                        item.setBackground(QBrush(QColor("#C8E6C9"))) 
-                        item.setForeground(QBrush(QColor("#1B5E20"))) # Deep forest green text
-                        item.setToolTip(f"👤 {info['name']}\nRole: {info['role']}\nTime: {info['range']}")
-                    
-                    else:
-                        # FREE STATE
-                        item.setBackground(QBrush(QColor("#FFFDF5")))
-                        item.setToolTip("Available")
-
-                    grid.setItem(row, col, item)
-            
-            # Ensure the rows expand if multiple names are present
-            grid.resizeRowsToContents()
+            # Refresh this specific grid and accumulate conflicts
+            conflict_count += self.refresh_grade_grid(grade)
 
         # Update the Status Bar with the conflict tally
         status_msg = f"Database: {self.engine.db_path} | ⚠️ Conflicts: {conflict_count}"
@@ -637,18 +553,20 @@ class MainWindow(QMainWindow):
     def refresh_grade_grid(self, grade_key):
         """Populates the grid for a specific grade view based on its dropdown."""
         view_data = self.grade_views.get(grade_key)
-        if not view_data: return
+        if not view_data: return 0
         
         selected_class = view_data['combo'].currentText()
         grid = view_data['grid']
         
         if not selected_class:
             grid.clearContents()
-            return
+            return 0
 
         s_map = self.engine.get_weekly_schedule_map()
         days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
         
+        local_conflicts = 0
+
         for row, t_val in enumerate(self.time_slots):
             for col, d_val in enumerate(days):
                 all_infos = s_map.get((d_val, t_val), [])
@@ -671,6 +589,7 @@ class MainWindow(QMainWindow):
                     item.setBackground(QBrush(QColor("#FF7043")))
                     item.setForeground(QBrush(QColor("white")))
                     item.setToolTip("⚠️ Multiple people scheduled")
+                    local_conflicts += 1
                 elif len(busy_infos) == 1:
                     item.setBackground(QBrush(QColor("#C8E6C9")))
                     item.setForeground(QBrush(QColor("#1B5E20")))
@@ -680,6 +599,8 @@ class MainWindow(QMainWindow):
                     item.setBackground(QBrush(QColor("#FFFDF5")))
                 
                 grid.setItem(row, col, item)
+        
+        return local_conflicts
 
     def open_add_person_dialog(self):
         d = AddPersonDialog(self)
