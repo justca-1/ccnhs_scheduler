@@ -251,6 +251,16 @@ class MainWindow(QMainWindow):
             combo.currentTextChanged.connect(lambda text, g=grade_name: self.refresh_grade_grid(g))
             
             top_bar.addWidget(combo)
+            
+            # NEW: Search Bar for filtering teachers
+            top_bar.addSpacing(20)
+            top_bar.addWidget(QLabel("Filter Teacher:"))
+            search_input = QLineEdit()
+            search_input.setPlaceholderText("Type name...")
+            search_input.setFixedWidth(150)
+            search_input.textChanged.connect(lambda text, g=grade_name: self.refresh_grade_grid(g))
+            top_bar.addWidget(search_input)
+            
             top_bar.addStretch()
             layout.addLayout(top_bar)
             
@@ -260,7 +270,7 @@ class MainWindow(QMainWindow):
             
             self.main_stack.addWidget(container)
             
-            self.grade_views[grade_name] = {'combo': combo, 'grid': grid}
+            self.grade_views[grade_name] = {'combo': combo, 'grid': grid, 'search': search_input}
 
     def _setup_grid(self, grid, days, time_slots):
         """Helper to configure a schedule table widget."""
@@ -550,6 +560,17 @@ class MainWindow(QMainWindow):
         self.stat_conflicts.setText(str(conflict_count))
         self.stat_schedules.setText(str(self.engine.get_total_schedule_count()))
 
+    def get_subject_color(self, subject):
+        """Generates a consistent pastel color for a subject string."""
+        if not subject:
+            return QColor("#FFFDF5") # Default cream
+        
+        # Deterministic hash so "Math" is always the same color
+        val = sum(map(ord, subject))
+        # Hue: 0-359, Saturation: 100 (Pastel), Lightness: 230 (Light/Bright)
+        hue = (val * 137) % 360 
+        return QColor.fromHsl(hue, 100, 230)
+
     def refresh_grade_grid(self, grade_key):
         """Populates the grid for a specific grade view based on its dropdown."""
         view_data = self.grade_views.get(grade_key)
@@ -558,8 +579,15 @@ class MainWindow(QMainWindow):
         selected_class = view_data['combo'].currentText()
         grid = view_data['grid']
         
+        # Get filter text
+        search_widget = view_data.get('search')
+        filter_text = search_widget.text().lower().strip() if search_widget else ""
+        
+        # Clear content AND spans (merges)
+        grid.clearContents()
+        grid.clearSpans()
+        
         if not selected_class:
-            grid.clearContents()
             return 0
 
         s_map = self.engine.get_weekly_schedule_map()
@@ -567,45 +595,90 @@ class MainWindow(QMainWindow):
         
         local_conflicts = 0
 
-        for row, t_val in enumerate(self.time_slots):
-            for col, d_val in enumerate(days):
+        # Process Column by Column (Day by Day) to allow vertical merging
+        for col, d_val in enumerate(days):
+            row = 0
+            while row < len(self.time_slots):
+                t_val = self.time_slots[row]
+                
                 all_infos = s_map.get((d_val, t_val), [])
                 # Filter for the selected class
                 busy_infos = [info for info in all_infos if info.get('grade_level') == selected_class]
                 
-                names = []
-                for info in busy_infos:
-                    txt = info['name']
-                    if info['subject']:
-                        txt += f" ({info['subject']})"
-                    names.append(txt)
+                # Apply Teacher Filter
+                if filter_text:
+                    busy_infos = [info for info in busy_infos if filter_text in info['name'].lower()]
                 
-                display_text = ", ".join(names)
+                if not busy_infos:
+                    row += 1
+                    continue
+
+                # --- 1. Determine Content ---
+                info = busy_infos[0]
+                subject = info.get('subject', '')
+                name = info['name']
+                is_conflict = len(busy_infos) > 1
+                
+                if is_conflict:
+                    display_text = "⚠️ CONFLICT\n" + "\n".join([i['name'] for i in busy_infos])
+                else:
+                    display_text = subject if subject else name
+                    if subject and name:
+                        display_text += f"\n({name})"
+
                 item = QTableWidgetItem(display_text)
                 item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 item.setFlags(item.flags() ^ Qt.ItemFlag.ItemIsEditable)
                 
-                if len(busy_infos) > 1:
+                # --- 2. Styling & Color Coding ---
+                if is_conflict:
                     item.setBackground(QBrush(QColor("#FF7043")))
                     item.setForeground(QBrush(QColor("white")))
                     item.setToolTip("⚠️ Multiple people scheduled")
                     local_conflicts += 1
-                elif len(busy_infos) == 1:
-                    item.setBackground(QBrush(QColor("#C8E6C9")))
-                    item.setForeground(QBrush(QColor("#1B5E20")))
-                    info = busy_infos[0]
-                    item.setToolTip(f"👤 {info['name']}\nRole: {info['role']}")
                 else:
-                    item.setBackground(QBrush(QColor("#FFFDF5")))
+                    # Dynamic Color based on Subject
+                    bg_color = self.get_subject_color(subject)
+                    item.setBackground(QBrush(bg_color))
+                    item.setForeground(QBrush(QColor("#2c3e50"))) # Dark text
+                    item.setFont(QFont("Arial", weight=QFont.Weight.Bold))
+                    item.setToolTip(f"Subject: {subject}\nTeacher: {name}\nTime: {t_val}")
                 
                 grid.setItem(row, col, item)
+
+                # --- 3. Calculate Merge Span ---
+                # Look ahead to see if the next slots are the exact same class
+                span_height = 1
+                if not is_conflict:
+                    for next_r in range(row + 1, len(self.time_slots)):
+                        next_t = self.time_slots[next_r]
+                        next_infos = s_map.get((d_val, next_t), [])
+                        next_busy = [i for i in next_infos if i.get('grade_level') == selected_class]
+                        
+                        # Stop if empty, conflict, or different subject/teacher
+                        if len(next_busy) == 1 and \
+                           next_busy[0]['name'] == name and \
+                           next_busy[0].get('subject', '') == subject:
+                            span_height += 1
+                        else:
+                            break
+                
+                if span_height > 1:
+                    grid.setSpan(row, col, span_height, 1)
+                
+                # Skip the rows we just handled
+                row += span_height
         
         return local_conflicts
 
     def open_add_person_dialog(self):
         d = AddPersonDialog(self)
-        if self._exec_with_blur(d) and self.engine.add_person(d.get_data()['name']):
-            self.refresh_all()
+        if self._exec_with_blur(d):
+            data = d.get_data()
+            if self.engine.add_person(data['name'], data['role']):
+                self.refresh_all()
+            else:
+                QMessageBox.warning(self, "Error", f"Could not add '{data['name']}'.\nThis name already exists.")
 
     def open_add_class_dialog(self):
         """Adds a new class to the dropdown list."""
@@ -664,3 +737,4 @@ class MainWindow(QMainWindow):
                 # Show the row if the text matches (case-insensitive)
                 is_visible = text.lower() in name_item.text().lower()
                 self.people_table.setRowHidden(i, not is_visible)
+                

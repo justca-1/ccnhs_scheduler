@@ -21,6 +21,12 @@ class ScheduleEngine:
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
+                
+                # Check for duplicates (case-insensitive)
+                cursor.execute("SELECT 1 FROM Person WHERE full_name = ? COLLATE NOCASE", (name,))
+                if cursor.fetchone():
+                    return False
+
                 cursor.execute(
                     "INSERT INTO Person (full_name, role) VALUES (?, ?)", 
                     (name, role)

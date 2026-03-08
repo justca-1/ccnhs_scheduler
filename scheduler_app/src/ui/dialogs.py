@@ -46,7 +46,7 @@ class AddPersonDialog(QDialog):
     def get_data(self) -> dict:
         """Returns the collected input as a dictionary."""
         return {
-            "name": self.name_input.text().strip(),
+            "name": self.name_input.text().strip().title(),
             "role": self.role_input.text().strip()
         }
     
@@ -81,7 +81,7 @@ class AddClassDialog(QDialog):
         }
 
 class AddScheduleDialog(QDialog):
-    def __init__(self, persons: list, parent=None):
+    def __init__(self, persons: list, available_classes: list = None, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Add Busy Time (Multi-Day)")
         layout = QVBoxLayout(self)
@@ -112,7 +112,10 @@ class AddScheduleDialog(QDialog):
 
         layout.addWidget(QLabel("Select Grade Level:"))
         self.grade_selector = QComboBox()
-        self.grade_selector.addItems(["Grade 7", "Grade 8", "Grade 9", "Grade 10", "Grade 11", "Grade 12"])
+        if available_classes:
+            self.grade_selector.addItems(sorted(available_classes))
+        else:
+            self.grade_selector.addItems(["Grade 7", "Grade 8", "Grade 9", "Grade 10", "Grade 11", "Grade 12"])
         layout.addWidget(self.grade_selector)
 
         # NEW: Subject Input
