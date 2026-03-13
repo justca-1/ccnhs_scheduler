@@ -62,7 +62,7 @@ class AddClassDialog(QDialog):
         
         layout.addWidget(QLabel("Grade Level:"))
         self.grade_combo = QComboBox()
-        self.grade_combo.addItems(["Grade 7", "Grade 8", "Grade 9", "Grade 10", "Grade 11", "Grade 12"])
+        self.grade_combo.addItems(["Grade 7", "Grade 8", "Grade 9", "Grade 10"])
         layout.addWidget(self.grade_combo)
         
         layout.addWidget(QLabel("Section Name:"))
@@ -81,8 +81,9 @@ class AddClassDialog(QDialog):
         }
 
 class AddScheduleDialog(QDialog):
-    def __init__(self, persons: list, available_classes: list = None, parent=None):
+    def __init__(self, engine, persons: list, available_classes: list = None, parent=None):
         super().__init__(parent)
+        self.engine = engine # Store engine for conflict checking
         self.setWindowTitle("Add Busy Time (Multi-Day)")
         layout = QVBoxLayout(self)
 
@@ -93,6 +94,7 @@ class AddScheduleDialog(QDialog):
         for day in ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]:
             cb = QCheckBox(day)
             self.day_boxes[day] = cb
+            cb.toggled.connect(self.check_conflicts) # Real-time check
             days_layout.addWidget(cb)
         layout.addLayout(days_layout)
 
@@ -107,6 +109,7 @@ class AddScheduleDialog(QDialog):
             
         self.person_selector.completer().setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
         self.person_selector.completer().setFilterMode(Qt.MatchFlag.MatchContains)
+        self.person_selector.currentIndexChanged.connect(self.check_conflicts)
         
         layout.addWidget(self.person_selector)
 
@@ -115,7 +118,7 @@ class AddScheduleDialog(QDialog):
         if available_classes:
             self.grade_selector.addItems(sorted(available_classes))
         else:
-            self.grade_selector.addItems(["Grade 7", "Grade 8", "Grade 9", "Grade 10", "Grade 11", "Grade 12"])
+            self.grade_selector.addItems(["Grade 7", "Grade 8", "Grade 9", "Grade 10"])
         layout.addWidget(self.grade_selector)
 
         # NEW: Subject Input
@@ -129,12 +132,53 @@ class AddScheduleDialog(QDialog):
         # ... (Keep your Start/End QTimeEdit code here) ...
         self.start_time = QTimeEdit(); self.start_time.setTime(QTime(9, 0))
         self.end_time = QTimeEdit(); self.end_time.setTime(QTime(10, 0))
+        
+        self.start_time.timeChanged.connect(self.check_conflicts)
+        self.end_time.timeChanged.connect(self.check_conflicts)
+        
         time_layout.addWidget(self.start_time); time_layout.addWidget(self.end_time)
         layout.addLayout(time_layout)
+        
+        # Conflict Feedback Label
+        self.conflict_lbl = QLabel("")
+        self.conflict_lbl.setStyleSheet("color: #E74C3C; font-size: 11px;")
+        layout.addWidget(self.conflict_lbl)
 
         self.btn_save = QPushButton("Save to Schedule")
         self.btn_save.clicked.connect(self.accept)
         layout.addWidget(self.btn_save)
+
+    def check_conflicts(self):
+        """Real-time validation against the database."""
+        person_id = self.person_selector.currentData()
+        if not person_id: return
+
+        start = self.start_time.time().toString("HH:mm")
+        end = self.end_time.time().toString("HH:mm")
+        
+        conflicts = []
+        
+        # Check each selected day
+        for day, cb in self.day_boxes.items():
+            if cb.isChecked():
+                # Query Engine
+                if not self.engine.can_assign(person_id, day, start, end):
+                    conflicts.append(day)
+
+        # Visual Feedback
+        if conflicts:
+            style = "border: 1px solid #E74C3C; background-color: #FDEDEC;"
+            msg = f"⚠️ Conflict detected on: {', '.join(conflicts)}"
+            self.conflict_lbl.setText(msg)
+            self.btn_save.setEnabled(False) # Prevent saving
+        else:
+            style = ""
+            self.conflict_lbl.setText("")
+            self.btn_save.setEnabled(True)
+
+        self.person_selector.setStyleSheet(style)
+        self.start_time.setStyleSheet(style)
+        self.end_time.setStyleSheet(style)
 
     def get_data(self) -> dict:
         selected_days = [day for day, cb in self.day_boxes.items() if cb.isChecked()]

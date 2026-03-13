@@ -1,5 +1,6 @@
 from PyQt6.QtWidgets import QTreeWidget, QTreeWidgetItem
 from PyQt6.QtCore import pyqtSignal, Qt
+from PyQt6.QtGui import QColor, QBrush
 
 class NavigationPanel(QTreeWidget):
     """
@@ -55,21 +56,26 @@ class NavigationPanel(QTreeWidget):
             "Grade 7": 1,
             "Grade 8": 2,
             "Grade 9": 3,
-            "Grade 10": 4,
-            "Grade 11": 5,
-            "Grade 12": 6
+            "Grade 10": 4
         }
         
         self.grade_items = {}
         for grade, stack_idx in self.grade_map.items():
             item = QTreeWidgetItem(self)
-            item.setText(0, f"📅 {grade}")
+            item.setText(0, grade)
             # Store Stack Index for Page Switching
             item.setData(0, Qt.ItemDataRole.UserRole, stack_idx)
             
             self.grade_items[grade] = item
 
-        # --- 3. Populate Children (Class Sections / Persons) ---
+        # --- 3. Conflict Report (Dedicated View) ---
+        conflict_node = QTreeWidgetItem(self)
+        conflict_node.setText(0, "⚠️ Conflict Report")
+        conflict_node.setData(0, Qt.ItemDataRole.UserRole, 5) # Stack Index 5
+        # Make it stand out with a soft red color
+        conflict_node.setForeground(0, QBrush(QColor("#E74C3C")))
+
+        # --- 4. Populate Children (Class Sections / Persons) ---
         try:
             persons = self.engine.get_all_persons()
         except Exception as e:

@@ -40,6 +40,7 @@ class MainWindow(QMainWindow):
         # Initialize Sections
         self.init_person_management_ui()
         self.init_schedule_grid_ui()
+        self.init_conflict_report_ui() # NEW: dedicated report area
 
         # Add the Status Bar at the very bottom
         self.statusBar().showMessage(f"Database Loaded: {self.engine.db_path}")
@@ -235,34 +236,13 @@ class MainWindow(QMainWindow):
         self.time_slots = [f"{h:02d}:{m:02d}" for h in range(6, 19) for m in (0, 30)]
         days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
         
-        # 1. All Grades (Grade 7-12) with Dropdowns
-        for i in range(7, 13):
+        # 1. All Grades (Grade 7-10) with Dropdowns
+        for i in range(7, 11):
             grade_name = f"Grade {i}"
             
             container = QWidget()
             layout = QVBoxLayout(container)
             layout.setContentsMargins(10, 10, 10, 10)
-            
-            top_bar = QHBoxLayout()
-            top_bar.addWidget(QLabel(f"Select {grade_name} Class:"))
-            combo = QComboBox()
-            combo.setFixedWidth(200)
-            # Connect signal using lambda to capture the specific grade name
-            combo.currentTextChanged.connect(lambda text, g=grade_name: self.refresh_grade_grid(g))
-            
-            top_bar.addWidget(combo)
-            
-            # NEW: Search Bar for filtering teachers
-            top_bar.addSpacing(20)
-            top_bar.addWidget(QLabel("Filter Teacher:"))
-            search_input = QLineEdit()
-            search_input.setPlaceholderText("Type name...")
-            search_input.setFixedWidth(150)
-            search_input.textChanged.connect(lambda text, g=grade_name: self.refresh_grade_grid(g))
-            top_bar.addWidget(search_input)
-            
-            top_bar.addStretch()
-            layout.addLayout(top_bar)
             
             grid = QTableWidget()
             self._setup_grid(grid, days, self.time_slots)
@@ -270,7 +250,45 @@ class MainWindow(QMainWindow):
             
             self.main_stack.addWidget(container)
             
-            self.grade_views[grade_name] = {'combo': combo, 'grid': grid, 'search': search_input}
+            self.grade_views[grade_name] = {'grid': grid}
+            
+    def init_conflict_report_ui(self):
+        """Page Index 5: The dedicated Conflict Report."""
+        self.conflict_page = QWidget()
+        layout = QVBoxLayout(self.conflict_page)
+        layout.setContentsMargins(20, 20, 20, 20)
+        
+        title = QLabel("⚠️ System Conflict Report")
+        title.setFont(QFont("Arial", 16, QFont.Weight.Bold))
+        title.setStyleSheet("color: #C0392B;")
+        layout.addWidget(title)
+        
+        desc = QLabel("The following double-bookings were detected in the database:")
+        desc.setStyleSheet("color: #666; margin-bottom: 10px;")
+        layout.addWidget(desc)
+        
+        self.conflict_table = QTableWidget()
+        self.conflict_table.setColumnCount(4)
+        self.conflict_table.setHorizontalHeaderLabels(["Who / Class", "Day", "Time Slot", "Conflict Details"])
+        self.conflict_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.conflict_table.verticalHeader().setVisible(False)
+        
+        # Styling for the table
+        self.conflict_table.setStyleSheet("""
+            QTableWidget {
+                border: 1px solid #E0E0E0;
+            }
+            QHeaderView::section {
+                background-color: #FFEBEE;
+                color: #C0392B;
+                font-weight: bold;
+                border: none;
+                padding: 6px;
+            }
+        """)
+        layout.addWidget(self.conflict_table)
+        
+        self.main_stack.addWidget(self.conflict_page)
 
     def _setup_grid(self, grid, days, time_slots):
         """Helper to configure a schedule table widget."""
@@ -511,7 +529,7 @@ class MainWindow(QMainWindow):
         
         # 1. Update Known Classes & Distribute to Grades
         # We categorize classes into buckets: "Grade 7", "Grade 8", etc.
-        grade_buckets = { f"Grade {i}": set() for i in range(7, 13) }
+        grade_buckets = { f"Grade {i}": set() for i in range(7, 11) }
         
         all_classes = set(self.known_classes)
         for infos in s_map.values():
@@ -522,7 +540,7 @@ class MainWindow(QMainWindow):
 
         for c_name in all_classes:
             # Simple heuristic to assign class to a grade bucket
-            for i in range(7, 13):
+            for i in range(7, 11):
                 # Matches "Grade 7", "7-A", "7-Rizal", etc.
                 if c_name.startswith(str(i)) or c_name.startswith(f"Grade {i}"):
                     if f"Grade {i}" in grade_buckets:
@@ -531,25 +549,14 @@ class MainWindow(QMainWindow):
         
         conflict_count = 0 # Counter for our Status Bar UX
 
-        # 2. Update Dropdowns for 7-12
-        for grade, data in self.grade_views.items():
-            combo = data['combo']
-            current = combo.currentText()
-            
-            items = sorted(list(grade_buckets.get(grade, [])))
-            
-            combo.blockSignals(True)
-            combo.clear()
-            combo.addItems(items)
-            
-            if current in items:
-                combo.setCurrentText(current)
-            elif items:
-                combo.setCurrentIndex(0)
-            combo.blockSignals(False)
-            
-            # Refresh this specific grid and accumulate conflicts
+        # 2. Update Grids for 7-10
+        for grade in self.grade_views.keys():
             conflict_count += self.refresh_grade_grid(grade)
+            
+        # 3. Update Conflict Report Tab
+        # (We use the data gathered during refresh_grade_grid or a fresh scan)
+        # For simplicity, let's run a fresh scan of the map to populate the table
+        self.refresh_conflict_table(s_map)
 
         # Update the Status Bar with the conflict tally
         status_msg = f"Database: {self.engine.db_path} | ⚠️ Conflicts: {conflict_count}"
@@ -571,25 +578,70 @@ class MainWindow(QMainWindow):
         hue = (val * 137) % 360 
         return QColor.fromHsl(hue, 100, 230)
 
+    def refresh_conflict_table(self, s_map):
+        """Populates the conflict report table."""
+        self.conflict_table.setRowCount(0)
+        
+        # Iterate over all slots in the map
+        # s_map structure: key=(Day, Time), value=[info_dict, info_dict...]
+        row_idx = 0
+        
+        for (day, time_slot), infos in s_map.items():
+            # Check for Multiple entries in the same Grade Level (Class Double Booking)
+            # OR Multiple entries for the same Person (Teacher Double Booking)
+            # Note: s_map is global. 
+            
+            # Simple heuristic: If multiple people are in the exact same grade/section at the same time
+            # But s_map is bucketed by grade in the grid. Here we have raw data.
+            
+            # Let's filter specifically for Teacher overlaps which are the most critical
+            # This requires grouping by Person ID, which s_map doesn't easily do (it's flat).
+            # However, we can spot Class Overlaps (Same Grade, Same Time, >1 Entry)
+            
+            # Actually, let's just show what the Grades view shows as "CONFLICT"
+            # If multiple teachers are assigned to the SAME Grade Level bucket at same time
+            
+            # Group infos by Grade Level
+            grade_groups = {}
+            for info in infos:
+                g = info.get('grade_level', 'Unknown')
+                if g not in grade_groups: grade_groups[g] = []
+                grade_groups[g].append(info)
+            
+            for g, group in grade_groups.items():
+                if len(group) > 1:
+                    # CONFLICT FOUND
+                    self.conflict_table.insertRow(row_idx)
+                    
+                    # Column 0: Who/Class
+                    self.conflict_table.setItem(row_idx, 0, QTableWidgetItem(str(g)))
+                    
+                    # Column 1: Day
+                    self.conflict_table.setItem(row_idx, 1, QTableWidgetItem(str(day)))
+                    
+                    # Column 2: Time
+                    self.conflict_table.setItem(row_idx, 2, QTableWidgetItem(str(time_slot)))
+                    
+                    # Column 3: Details
+                    names = ", ".join([x['name'] for x in group])
+                    msg = f"Double Booked: {names}"
+                    item = QTableWidgetItem(msg)
+                    item.setForeground(QBrush(QColor("#C0392B")))
+                    self.conflict_table.setItem(row_idx, 3, item)
+                    
+                    row_idx += 1
+
     def refresh_grade_grid(self, grade_key):
         """Populates the grid for a specific grade view based on its dropdown."""
         view_data = self.grade_views.get(grade_key)
         if not view_data: return 0
         
-        selected_class = view_data['combo'].currentText()
         grid = view_data['grid']
-        
-        # Get filter text
-        search_widget = view_data.get('search')
-        filter_text = search_widget.text().lower().strip() if search_widget else ""
         
         # Clear content AND spans (merges)
         grid.clearContents()
         grid.clearSpans()
         
-        if not selected_class:
-            return 0
-
         s_map = self.engine.get_weekly_schedule_map()
         days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
         
@@ -602,12 +654,8 @@ class MainWindow(QMainWindow):
                 t_val = self.time_slots[row]
                 
                 all_infos = s_map.get((d_val, t_val), [])
-                # Filter for the selected class
-                busy_infos = [info for info in all_infos if info.get('grade_level') == selected_class]
-                
-                # Apply Teacher Filter
-                if filter_text:
-                    busy_infos = [info for info in busy_infos if filter_text in info['name'].lower()]
+                # Filter for ANY class in this grade level
+                busy_infos = [info for info in all_infos if grade_key in info.get('grade_level', '')]
                 
                 if not busy_infos:
                     row += 1
@@ -653,7 +701,7 @@ class MainWindow(QMainWindow):
                     for next_r in range(row + 1, len(self.time_slots)):
                         next_t = self.time_slots[next_r]
                         next_infos = s_map.get((d_val, next_t), [])
-                        next_busy = [i for i in next_infos if i.get('grade_level') == selected_class]
+                        next_busy = [i for i in next_infos if grade_key in i.get('grade_level', '')]
                         
                         # Stop if empty, conflict, or different subject/teacher
                         if len(next_busy) == 1 and \
@@ -707,10 +755,11 @@ class MainWindow(QMainWindow):
         if not p_list: 
             QMessageBox.warning(self, "Error", "Add a person first!")
             return
-            
-        # Pass available classes + senior grades to the dialog
-        all_options = list(self.known_classes) + ["Grade 11", "Grade 12"]
-        d = AddScheduleDialog(p_list, available_classes=all_options, parent=self)
+        
+        # Pass 'self.engine' so dialog can perform real-time checking
+        # Pass available classes to the dialog
+        all_options = list(self.known_classes)
+        d = AddScheduleDialog(self.engine, p_list, available_classes=all_options, parent=self)
         
         if self._exec_with_blur(d):
             res = d.get_data()
