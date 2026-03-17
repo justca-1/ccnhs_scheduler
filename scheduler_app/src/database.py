@@ -43,11 +43,18 @@ def init_db() -> str:
                           end_time TEXT, 
                           grade_level TEXT, 
                           subject TEXT,
+                          room TEXT,
                           FOREIGN KEY(person_id) REFERENCES Person(person_id))''')
         
         # Migration: Add 'subject' column if it doesn't exist (for existing DBs)
         try:
             cursor.execute("ALTER TABLE Schedule ADD COLUMN subject TEXT")
+        except sqlite3.OperationalError:
+            pass # Column likely already exists
+            
+        # Migration: Add 'room' column if it doesn't exist
+        try:
+            cursor.execute("ALTER TABLE Schedule ADD COLUMN room TEXT")
         except sqlite3.OperationalError:
             pass # Column likely already exists
             

@@ -127,6 +127,12 @@ class AddScheduleDialog(QDialog):
         self.subject_input.setPlaceholderText("e.g. Math, Science (Optional)")
         layout.addWidget(self.subject_input)
 
+        # NEW: Room Input
+        layout.addWidget(QLabel("Room:"))
+        self.room_input = QLineEdit()
+        self.room_input.setPlaceholderText("e.g. Room 101, Lab A (Optional)")
+        layout.addWidget(self.room_input)
+
         # 3. TIME SELECTION
         time_layout = QHBoxLayout()
         # ... (Keep your Start/End QTimeEdit code here) ...
@@ -156,25 +162,43 @@ class AddScheduleDialog(QDialog):
         start = self.start_time.time().toString("HH:mm")
         end = self.end_time.time().toString("HH:mm")
         
-        conflicts = []
+        conflicting_days = []
+        tooltip_lines = []
+        
+        person_name = self.person_selector.currentText()
         
         # Check each selected day
         for day, cb in self.day_boxes.items():
             if cb.isChecked():
-                # Query Engine
-                if not self.engine.can_assign(person_id, day, start, end):
-                    conflicts.append(day)
+                # Query Engine for detailed conflicts
+                conflicts = self.engine.get_conflict_details(person_id, day, start, end)
+                if conflicts:
+                    conflicting_days.append(day)
+                    for c in conflicts:
+                        grade = c.get('grade_level', 'Unknown Class')
+                        subject = c.get('subject') or 'No Subject'
+                        c_start = c.get('start_time')
+                        c_end = c.get('end_time')
+                        tooltip_lines.append(f"Teacher {person_name} is already assigned to {grade} ({subject}) from {c_start} to {c_end} on {day}.")
 
         # Visual Feedback
-        if conflicts:
+        if conflicting_days:
             style = "border: 1px solid #E74C3C; background-color: #FDEDEC;"
-            msg = f"⚠️ Conflict detected on: {', '.join(conflicts)}"
+            msg = f"⚠️ Conflict detected on: {', '.join(conflicting_days)}"
             self.conflict_lbl.setText(msg)
             self.btn_save.setEnabled(False) # Prevent saving
+            
+            tooltip_text = "\n".join(tooltip_lines)
+            self.person_selector.setToolTip(tooltip_text)
+            self.start_time.setToolTip(tooltip_text)
+            self.end_time.setToolTip(tooltip_text)
         else:
             style = ""
             self.conflict_lbl.setText("")
             self.btn_save.setEnabled(True)
+            self.person_selector.setToolTip("")
+            self.start_time.setToolTip("")
+            self.end_time.setToolTip("")
 
         self.person_selector.setStyleSheet(style)
         self.start_time.setStyleSheet(style)
@@ -199,6 +223,7 @@ class AddScheduleDialog(QDialog):
             "person_id": self.person_selector.currentData(),
             "grade_level": self.grade_selector.currentText(),
             "subject": self.subject_input.text().strip(),
+            "room": self.room_input.text().strip(),
             "start": self.start_time.time().toString("HH:mm"),
             "end": self.end_time.time().toString("HH:mm")
         }

@@ -93,13 +93,28 @@ class ScheduleEngine:
             print(f"Conflict Check Error: {e}")
             return False
 
-    def add_schedule(self, person_id: int, day: str, start: str, end: str, grade_level: str, subject: str = "") -> bool:
+    def get_conflict_details(self, person_id: int, day: str, start: str, end: str) -> List[Dict]:
+        """
+        Returns details of any existing schedules that overlap with the requested time slot.
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                query = "SELECT * FROM Schedule WHERE person_id = ? AND day = ? AND start_time < ? AND end_time > ?"
+                cursor.execute(query, (person_id, day, end, start))
+                return [dict(row) for row in cursor.fetchall()]
+        except sqlite3.Error as e:
+            print(f"Conflict Fetch Error: {e}")
+            return []
+
+    def add_schedule(self, person_id: int, day: str, start: str, end: str, grade_level: str, subject: str = "", room: str = "") -> bool:
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    "INSERT INTO Schedule (person_id, day, start_time, end_time, grade_level, subject) VALUES (?, ?, ?, ?, ?, ?)",
-                    (person_id, day, start, end, grade_level, subject)
+                    "INSERT INTO Schedule (person_id, day, start_time, end_time, grade_level, subject, room) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (person_id, day, start, end, grade_level, subject, room)
                 )
                 conn.commit()
             return True
@@ -117,7 +132,7 @@ class ScheduleEngine:
         schedule_map = {}
         
         query = """
-        SELECT p.full_name, p.role, s.day, s.start_time, s.end_time, s.grade_level, s.subject 
+        SELECT p.full_name, p.role, s.day, s.start_time, s.end_time, s.grade_level, s.subject, s.room 
         FROM Schedule s
         JOIN Person p ON s.person_id = p.person_id
         """
@@ -167,6 +182,7 @@ class ScheduleEngine:
                     "name": row['full_name'],
                     "role": row['role'] if row['role'] else "No Role",
                     "subject": row['subject'] if row['subject'] else "",
+                    "room": row['room'] if row['room'] else "",
                     "range": f"{row['start_time']} - {row['end_time']}",
                     "grade_level": row['grade_level']
                 }
@@ -316,8 +332,8 @@ class ScheduleEngine:
                 # Restore Schedules
                 for s in schedules:
                     cursor.execute(
-                        "INSERT INTO Schedule (person_id, day, start_time, end_time, grade_level, subject) VALUES (?, ?, ?, ?, ?, ?)",
-                        (p['person_id'], s['day'], s['start_time'], s['end_time'], s['grade_level'], s['subject'])
+                        "INSERT INTO Schedule (person_id, day, start_time, end_time, grade_level, subject, room) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        (p['person_id'], s['day'], s['start_time'], s['end_time'], s['grade_level'], s['subject'], s.get('room', ''))
                     )
                 conn.commit()
             return True

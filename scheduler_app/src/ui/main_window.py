@@ -664,6 +664,7 @@ class MainWindow(QMainWindow):
                 # --- 1. Determine Content ---
                 info = busy_infos[0]
                 subject = info.get('subject', '')
+                room = info.get('room', '')
                 name = info['name']
                 is_conflict = len(busy_infos) > 1
                 
@@ -673,6 +674,8 @@ class MainWindow(QMainWindow):
                     display_text = subject if subject else name
                     if subject and name:
                         display_text += f"\n({name})"
+                    if room:
+                        display_text += f"\n[{room}]"
 
                 item = QTableWidgetItem(display_text)
                 item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -690,7 +693,7 @@ class MainWindow(QMainWindow):
                     item.setBackground(QBrush(bg_color))
                     item.setForeground(QBrush(QColor("#2c3e50"))) # Dark text
                     item.setFont(QFont("Arial", weight=QFont.Weight.Bold))
-                    item.setToolTip(f"Subject: {subject}\nTeacher: {name}\nTime: {t_val}")
+                    item.setToolTip(f"Subject: {subject}\nTeacher: {name}\nRoom: {room}\nTime: {t_val}")
                 
                 grid.setItem(row, col, item)
 
@@ -771,7 +774,7 @@ class MainWindow(QMainWindow):
             success_count = 0
             for day_name in res['days']:
                 # Pass 'day_name' from the loop into the engine
-                if self.engine.add_schedule(res['person_id'], day_name, res['start'], res['end'], res['grade_level'], res['subject']):
+                if self.engine.add_schedule(res['person_id'], day_name, res['start'], res['end'], res['grade_level'], res['subject'], res['room']):
                     success_count += 1
             
             if success_count > 0:
