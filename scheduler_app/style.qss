@@ -92,7 +92,7 @@ QListWidget::item, QTreeWidget::item {
     padding: 12px;
     border-radius: 8px;
     color: #555;
-    margin-bottom: 5px;
+    margin-bottom: 3px;
 }
 QListWidget::item:selected, QTreeWidget::item:selected {
     background-color: #F1F8E9;

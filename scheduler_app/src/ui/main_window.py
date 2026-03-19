@@ -299,6 +299,8 @@ class MainWindow(QMainWindow):
         grid.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         grid.verticalHeader().setDefaultSectionSize(35) # Compact rows
         grid.verticalHeader().setFixedWidth(60) # Compact time column
+        grid.verticalHeader().setDefaultSectionSize(50) # Increase this value to make rows taller
+        grid.verticalHeader().setFixedWidth(70) # Increase this value to make the time column wider
         grid.setShowGrid(False) # Hide default grid lines for card-like look
 
     # --- ACTION METHODS ---
