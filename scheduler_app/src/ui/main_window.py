@@ -769,12 +769,22 @@ class MainWindow(QMainWindow):
             if res is None: 
                 return
 
+            from engine import ScheduleSlot
             # --- THE FIX IS HERE ---
             # 'res' now contains a LIST of days called 'days'
             success_count = 0
             for day_name in res['days']:
                 # Pass 'day_name' from the loop into the engine
-                if self.engine.add_schedule(res['person_id'], day_name, res['start'], res['end'], res['grade_level'], res['subject'], res['room']):
+                slot = ScheduleSlot(
+                    person_id=res['person_id'],
+                    day=day_name,
+                    start_time=res['start'],
+                    end_time=res['end'],
+                    grade_level=res['grade_level'],
+                    subject=res['subject'],
+                    room=res['room']
+                )
+                if self.engine.add_schedule(slot):
                     success_count += 1
             
             if success_count > 0:

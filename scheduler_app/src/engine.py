@@ -1,6 +1,18 @@
 import sqlite3
 from typing import List, Dict
 from datetime import datetime, timedelta
+from dataclasses import dataclass
+
+@dataclass
+class ScheduleSlot:
+    """Data Class defining the structure of a schedule entry for type safety."""
+    person_id: int
+    day: str
+    start_time: str
+    end_time: str
+    grade_level: str
+    subject: str = ""
+    room: str = ""
 
 class ScheduleEngine:
     """
@@ -108,13 +120,15 @@ class ScheduleEngine:
             print(f"Conflict Fetch Error: {e}")
             return []
 
-    def add_schedule(self, person_id: int, day: str, start: str, end: str, grade_level: str, subject: str = "", room: str = "") -> bool:
+    def add_schedule(self, slot: ScheduleSlot) -> bool:
         try:
+            # ATOMIC TRANSACTION: using `with` context manager ensures that if an error occurs, 
+            # the database automatically rolls back, preventing "partial" data entry.
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute(
                     "INSERT INTO Schedule (person_id, day, start_time, end_time, grade_level, subject, room) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (person_id, day, start, end, grade_level, subject, room)
+                    (slot.person_id, slot.day, slot.start_time, slot.end_time, slot.grade_level, slot.subject, slot.room)
                 )
                 conn.commit()
             return True

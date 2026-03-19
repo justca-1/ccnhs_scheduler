@@ -148,19 +148,50 @@ class AddScheduleDialog(QDialog):
         # Conflict Feedback Label
         self.conflict_lbl = QLabel("")
         self.conflict_lbl.setStyleSheet("color: #E74C3C; font-size: 11px;")
+        self.conflict_lbl.setWordWrap(True)
         layout.addWidget(self.conflict_lbl)
 
         self.btn_save = QPushButton("Save to Schedule")
         self.btn_save.clicked.connect(self.accept)
         layout.addWidget(self.btn_save)
+        
+        # Trigger initial validation to set default states (e.g., Grey-Out strategy)
+        self.check_conflicts()
 
     def check_conflicts(self):
         """Real-time validation against the database."""
-        person_id = self.person_selector.currentData()
-        if not person_id: return
+        # 1. Base Validation (Grey-Out Strategy)
+        start_time_val = self.start_time.time()
+        end_time_val = self.end_time.time()
+        
+        # Reset visual styles initially
+        self.person_selector.setStyleSheet("")
+        self.start_time.setStyleSheet("")
+        self.end_time.setStyleSheet("")
+        self.person_selector.setToolTip("")
+        self.start_time.setToolTip("")
+        self.end_time.setToolTip("")
 
-        start = self.start_time.time().toString("HH:mm")
-        end = self.end_time.time().toString("HH:mm")
+        has_days = any(cb.isChecked() for cb in self.day_boxes.values())
+        if not has_days:
+            self.conflict_lbl.setText("Please select at least one day.")
+            self.btn_save.setEnabled(False)
+            return
+            
+        if end_time_val <= start_time_val:
+            self.conflict_lbl.setText("End time must be after start time.")
+            self.btn_save.setEnabled(False)
+            return
+            
+        person_id = self.person_selector.currentData()
+        if not person_id: 
+            self.conflict_lbl.setText("Please select a person.")
+            self.btn_save.setEnabled(False)
+            return
+
+        # 2. Database Conflict Detection
+        start = start_time_val.toString("HH:mm")
+        end = end_time_val.toString("HH:mm")
         
         conflicting_days = []
         tooltip_lines = []
@@ -179,30 +210,31 @@ class AddScheduleDialog(QDialog):
                         subject = c.get('subject') or 'No Subject'
                         c_start = c.get('start_time')
                         c_end = c.get('end_time')
-                        tooltip_lines.append(f"Teacher {person_name} is already assigned to {grade} ({subject}) from {c_start} to {c_end} on {day}.")
+                        room = c.get('room')
+                        room_text = f" in {room}" if room else ""
+                        
+                        # Detailed "End Game" Conflict Message
+                        tooltip_lines.append(f"⚠️ Conflict Detected: Teacher {person_name} is already{room_text} teaching {subject} ({grade}) from {c_start} to {c_end} on {day}.")
 
         # Visual Feedback
         if conflicting_days:
             style = "border: 1px solid #E74C3C; background-color: #FDEDEC;"
-            msg = f"⚠️ Conflict detected on: {', '.join(conflicting_days)}"
+            
+            # Show detailed error directly on the UI
+            msg = "\n".join(tooltip_lines)
             self.conflict_lbl.setText(msg)
             self.btn_save.setEnabled(False) # Prevent saving
             
-            tooltip_text = "\n".join(tooltip_lines)
-            self.person_selector.setToolTip(tooltip_text)
-            self.start_time.setToolTip(tooltip_text)
-            self.end_time.setToolTip(tooltip_text)
+            self.person_selector.setToolTip(msg)
+            self.start_time.setToolTip(msg)
+            self.end_time.setToolTip(msg)
+            
+            self.person_selector.setStyleSheet(style)
+            self.start_time.setStyleSheet(style)
+            self.end_time.setStyleSheet(style)
         else:
-            style = ""
             self.conflict_lbl.setText("")
             self.btn_save.setEnabled(True)
-            self.person_selector.setToolTip("")
-            self.start_time.setToolTip("")
-            self.end_time.setToolTip("")
-
-        self.person_selector.setStyleSheet(style)
-        self.start_time.setStyleSheet(style)
-        self.end_time.setStyleSheet(style)
 
     def get_data(self) -> dict:
         selected_days = [day for day, cb in self.day_boxes.items() if cb.isChecked()]
