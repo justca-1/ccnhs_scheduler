@@ -37,41 +37,53 @@ class ScheduleEngine:
         """Adds a new person to the database."""
         if not name:
             return False
+        conn = None
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.cursor()
-                
-                # Check for duplicates (case-insensitive)
-                cursor.execute("SELECT 1 FROM Person WHERE full_name = ? COLLATE NOCASE", (name,))
-                if cursor.fetchone():
-                    return False
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            # Check for duplicates (case-insensitive)
+            cursor.execute("SELECT 1 FROM Person WHERE full_name = ? COLLATE NOCASE", (name,))
+            if cursor.fetchone():
+                return False
 
-                cursor.execute(
-                    "INSERT INTO Person (full_name, role) VALUES (?, ?)", 
-                    (name, role)
-                )
-                conn.commit()
+            cursor.execute(
+                "INSERT INTO Person (full_name, role) VALUES (?, ?)", 
+                (name, role)
+            )
+            conn.commit()
             return True
         except sqlite3.Error as e:
+            if conn:
+                conn.rollback()
             print(f"Database Error (add_person): {e}")
             return False
+        finally:
+            if conn:
+                conn.close()
 
     def update_person_name(self, person_id: int, new_name: str) -> bool:
         """Updates the full name of a person."""
         if not new_name:
             return False
+        conn = None
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.cursor()
-                cursor.execute(
-                    "UPDATE Person SET full_name = ? WHERE person_id = ?", 
-                    (new_name, person_id)
-                )
-                conn.commit()
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE Person SET full_name = ? WHERE person_id = ?", 
+                (new_name, person_id)
+            )
+            conn.commit()
             return True
         except sqlite3.Error as e:
+            if conn:
+                conn.rollback()
             print(f"Update Error: {e}")
             return False
+        finally:
+            if conn:
+                conn.close()
 
     def get_all_persons(self) -> List[Dict]:
         """Fetches all registered persons as a list of dictionaries."""
@@ -194,20 +206,24 @@ class ScheduleEngine:
             return []
 
     def add_schedule(self, slot: ScheduleSlot) -> bool:
+        conn = None
         try:
-            # ATOMIC TRANSACTION: using `with` context manager ensures that if an error occurs, 
-            # the database automatically rolls back, preventing "partial" data entry.
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.cursor()
-                cursor.execute(
-                    "INSERT INTO Schedule (person_id, day, start_time, end_time, grade_level, subject, room) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (slot.person_id, slot.day, slot.start_time, slot.end_time, slot.grade_level, slot.subject, slot.room)
-                )
-                conn.commit()
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT INTO Schedule (person_id, day, start_time, end_time, grade_level, subject, room) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (slot.person_id, slot.day, slot.start_time, slot.end_time, slot.grade_level, slot.subject, slot.room)
+            )
+            conn.commit()
             return True
         except sqlite3.Error as e:
+            if conn:
+                conn.rollback()
             print(f"Database Error: {e}")
             return False
+        finally:
+            if conn:
+                conn.close()
 
     def add_schedule_batch(self, slots: List[ScheduleSlot]) -> bool:
         """
@@ -216,21 +232,27 @@ class ScheduleEngine:
         """
         if not slots:
             return True
+        conn = None
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.cursor()
-                data = [(s.person_id, s.day, s.start_time, s.end_time, s.grade_level, s.subject, s.room) for s in slots]
-                
-                # executemany compiles the query once and applies it to the whole array
-                cursor.executemany(
-                    "INSERT INTO Schedule (person_id, day, start_time, end_time, grade_level, subject, room) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    data
-                )
-                conn.commit()
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            data = [(s.person_id, s.day, s.start_time, s.end_time, s.grade_level, s.subject, s.room) for s in slots]
+            
+            # executemany compiles the query once and applies it to the whole array
+            cursor.executemany(
+                "INSERT INTO Schedule (person_id, day, start_time, end_time, grade_level, subject, room) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                data
+            )
+            conn.commit()
             return True
         except sqlite3.Error as e:
+            if conn:
+                conn.rollback()
             print(f"Batch Database Error: {e}")
             return False
+        finally:
+            if conn:
+                conn.close()
 
     def get_weekly_schedule_map(self, person_id=None) -> dict:
         """
@@ -354,42 +376,60 @@ class ScheduleEngine:
 
     def clear_all_data(self) -> bool:
         """Wipes the database - Use with caution!"""
+        conn = None
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.cursor()
-                cursor.execute("DELETE FROM Schedule")
-                cursor.execute("DELETE FROM Person")
-                conn.commit()
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM Schedule")
+            cursor.execute("DELETE FROM Person")
+            conn.commit()
             return True
         except sqlite3.Error:
+            if conn:
+                conn.rollback()
             return False
+        finally:
+            if conn:
+                conn.close()
     
     def delete_person(self, person_id: int) -> bool:
         """Removes a person and all their associated schedules."""
+        conn = None
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.cursor()
-                # 1. Remove their schedules first (to maintain integrity)
-                cursor.execute("DELETE FROM Schedule WHERE person_id = ?", (person_id,))
-                # 2. Remove the person
-                cursor.execute("DELETE FROM Person WHERE person_id = ?", (person_id,))
-                conn.commit()
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            # 1. Remove their schedules first (to maintain integrity)
+            cursor.execute("DELETE FROM Schedule WHERE person_id = ?", (person_id,))
+            # 2. Remove the person
+            cursor.execute("DELETE FROM Person WHERE person_id = ?", (person_id,))
+            conn.commit()
             return True
         except sqlite3.Error as e:
+            if conn:
+                conn.rollback()
             print(f"Delete Error: {e}")
             return False
+        finally:
+            if conn:
+                conn.close()
         
 
     def clear_only_schedules(self) -> bool:
         """Deletes all rows from the Schedule table but keeps the Person table."""
+        conn = None
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.cursor()
-                cursor.execute("DELETE FROM Schedule")
-                conn.commit()
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM Schedule")
+            conn.commit()
             return True
         except sqlite3.Error:
+            if conn:
+                conn.rollback()
             return False
+        finally:
+            if conn:
+                conn.close()
 
     def get_total_schedule_count(self) -> int:
         """Returns the total number of busy blocks (rows) in the Schedule table."""
@@ -426,30 +466,36 @@ class ScheduleEngine:
 
     def restore_person_data(self, backup_data: dict) -> bool:
         """Restores a person and their schedules from backup."""
+        conn = None
         try:
             p = backup_data['person']
             schedules = backup_data['schedules']
             
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.cursor()
-                
-                # Restore Person (Force ID to maintain consistency)
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            # Restore Person (Force ID to maintain consistency)
+            cursor.execute(
+                "INSERT INTO Person (person_id, full_name, role) VALUES (?, ?, ?)",
+                (p['person_id'], p['full_name'], p['role'])
+            )
+            
+            # Restore Schedules
+            for s in schedules:
                 cursor.execute(
-                    "INSERT INTO Person (person_id, full_name, role) VALUES (?, ?, ?)",
-                    (p['person_id'], p['full_name'], p['role'])
+                    "INSERT INTO Schedule (person_id, day, start_time, end_time, grade_level, subject, room) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (p['person_id'], s['day'], s['start_time'], s['end_time'], s['grade_level'], s['subject'], s.get('room', ''))
                 )
-                
-                # Restore Schedules
-                for s in schedules:
-                    cursor.execute(
-                        "INSERT INTO Schedule (person_id, day, start_time, end_time, grade_level, subject, room) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                        (p['person_id'], s['day'], s['start_time'], s['end_time'], s['grade_level'], s['subject'], s.get('room', ''))
-                    )
-                conn.commit()
+            conn.commit()
             return True
         except sqlite3.Error as e:
+            if conn:
+                conn.rollback()
             print(f"Restore Error: {e}")
             return False
+        finally:
+            if conn:
+                conn.close()
 
 class DepEdValidator(ScheduleEngine):
     """

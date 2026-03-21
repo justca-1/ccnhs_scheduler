@@ -1,7 +1,7 @@
 import sqlite3
 import pytest
 
-from engine import ScheduleEngine, ScheduleSlot
+from scheduler_app.src.engine import ScheduleEngine, ScheduleSlot
 
 def test_can_assign_success(engine):
     """Test that a completely free slot returns valid."""

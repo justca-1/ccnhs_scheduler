@@ -1,7 +1,7 @@
 import pytest
 import sqlite3
 
-from engine import ScheduleEngine
+from scheduler_app.src.engine import ScheduleEngine
 
 @pytest.fixture
 def temp_db_path(tmp_path):
