@@ -14,6 +14,13 @@ class ScheduleSlot:
     subject: str = ""
     room: str = ""
 
+@dataclass
+class ValidationResult:
+    """Result object to provide context for assignment validation."""
+    is_valid: bool
+    error_message: str = ""
+    conflict_type: str = ""
+
 class ScheduleEngine:
     """
     The central logic engine for the scheduling system.
@@ -89,21 +96,87 @@ class ScheduleEngine:
 
     # --- SCHEDULE MANAGEMENT ---
 
-    def can_assign(self, person_id: int, day: str, start: str, end: str) -> bool:
+    def can_assign(self, slot: ScheduleSlot) -> ValidationResult:
         """
-        Checks if a person is free during the requested time slot.
-        Returns True if assignment is possible (no overlap), False otherwise.
+        Checks if the requested schedule slot is free from conflicts.
+        Optimized to use a single SELECT query to reduce database hits.
+        Returns a ValidationResult object.
         """
         try:
             with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
-                # Overlap logic: (StartA < EndB) and (EndA > StartB)
-                query = "SELECT COUNT(*) FROM Schedule WHERE person_id = ? AND day = ? AND start_time < ? AND end_time > ?"
-                cursor.execute(query, (person_id, day, end, start))
-                return cursor.fetchone()[0] == 0
+                
+                query = """
+                    SELECT person_id, room, grade_level
+                    FROM Schedule
+                    WHERE day = ? AND start_time < ? AND end_time > ?
+                """
+                cursor.execute(query, (slot.day, slot.end_time, slot.start_time))
+                rows = cursor.fetchall()
+                
+                # Filter through the results in memory
+                for row in rows:
+                    if row['person_id'] == slot.person_id:
+                        return ValidationResult(False, "Teacher is already booked at this time.", "TEACHER")
+                    if slot.room and row['room'] == slot.room:
+                        return ValidationResult(False, f"Room '{slot.room}' is already in use at this time.", "ROOM")
+                    if slot.grade_level and row['grade_level'] == slot.grade_level:
+                        return ValidationResult(False, f"Grade Level '{slot.grade_level}' already has a class at this time.", "GRADE")
+                        
+                return ValidationResult(True)
         except sqlite3.Error as e:
             print(f"Conflict Check Error: {e}")
-            return False
+            return ValidationResult(False, f"Database error: {e}", "DATABASE")
+
+    def can_assign_batch(self, slots: List[ScheduleSlot]) -> ValidationResult:
+        """
+        Batch validation to prevent N+1 query problems.
+        Fetches existing schedules for the relevant days in ONE query,
+        then checks all requested slots for conflicts entirely in memory.
+        """
+        if not slots:
+            return ValidationResult(True)
+            
+        days = list(set(slot.day for slot in slots))
+        # Dynamically create the (?, ?, ?) string depending on how many days we are checking
+        placeholders = ', '.join('?' for _ in days)
+        
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                
+                query = f"SELECT person_id, day, start_time, end_time, grade_level, room FROM Schedule WHERE day IN ({placeholders})"
+                cursor.execute(query, days)
+                existing_schedules = [dict(row) for row in cursor.fetchall()]
+                
+                # 1. Check against existing database schedules
+                for slot in slots:
+                    for existing in existing_schedules:
+                        if slot.day == existing['day'] and slot.start_time < existing['end_time'] and slot.end_time > existing['start_time']:
+                            if slot.person_id == existing['person_id']:
+                                return ValidationResult(False, f"Teacher is already booked on {slot.day} at {slot.start_time}-{slot.end_time}.", "TEACHER")
+                            if slot.room and slot.room == existing['room']:
+                                return ValidationResult(False, f"Room '{slot.room}' is already in use on {slot.day} at {slot.start_time}-{slot.end_time}.", "ROOM")
+                            if slot.grade_level and slot.grade_level == existing['grade_level']:
+                                return ValidationResult(False, f"Grade Level '{slot.grade_level}' already has a class on {slot.day} at {slot.start_time}-{slot.end_time}.", "GRADE")
+                                
+                # 2. Check for internal overlaps within the new batch itself
+                for i, slot1 in enumerate(slots):
+                    for slot2 in slots[i+1:]:
+                        if slot1.day == slot2.day and slot1.start_time < slot2.end_time and slot1.end_time > slot2.start_time:
+                            if slot1.person_id == slot2.person_id:
+                                return ValidationResult(False, "Conflict in new batch: Teacher has overlapping times.", "TEACHER")
+                            if slot1.room and slot1.room == slot2.room:
+                                return ValidationResult(False, f"Conflict in new batch: Room '{slot1.room}' overlaps.", "ROOM")
+                            if slot1.grade_level and slot1.grade_level == slot2.grade_level:
+                                return ValidationResult(False, f"Conflict in new batch: Grade '{slot1.grade_level}' overlaps.", "GRADE")
+                                
+                return ValidationResult(True)
+        except sqlite3.Error as e:
+            print(f"Batch Conflict Check Error: {e}")
+            return ValidationResult(False, f"Database error: {e}", "DATABASE")
 
     def get_conflict_details(self, person_id: int, day: str, start: str, end: str) -> List[Dict]:
         """
@@ -134,6 +207,29 @@ class ScheduleEngine:
             return True
         except sqlite3.Error as e:
             print(f"Database Error: {e}")
+            return False
+
+    def add_schedule_batch(self, slots: List[ScheduleSlot]) -> bool:
+        """
+        Saves a batch of schedules in a single transaction.
+        Significantly faster than calling add_schedule inside a for loop.
+        """
+        if not slots:
+            return True
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                data = [(s.person_id, s.day, s.start_time, s.end_time, s.grade_level, s.subject, s.room) for s in slots]
+                
+                # executemany compiles the query once and applies it to the whole array
+                cursor.executemany(
+                    "INSERT INTO Schedule (person_id, day, start_time, end_time, grade_level, subject, room) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    data
+                )
+                conn.commit()
+            return True
+        except sqlite3.Error as e:
+            print(f"Batch Database Error: {e}")
             return False
 
     def get_weekly_schedule_map(self, person_id=None) -> dict:
