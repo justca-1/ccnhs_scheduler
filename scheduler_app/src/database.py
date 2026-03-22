@@ -3,29 +3,22 @@ src/database.py - Handles the SQLite database creation and pathing.
 """
 
 import sqlite3
-import os
+import logging
+from pathlib import Path
 
-def get_db_path() -> str:
-    """
-    Returns the absolute path to the database file.
-    Creates a folder in the user's home directory to ensure it's writable.
-    """
-    # Using 'expanduser' ensures this works on both Windows and Mac
-    base_dir = os.path.join(os.path.expanduser("~"), "SchedulerApp")
-    
-    if not os.path.exists(base_dir):
-        os.makedirs(base_dir)
+def get_db_path():
+    """Returns the persistent path for the database in the user's Documents folder."""
+    # Create a subfolder so we don't clutter their main Documents folder
+    app_dir = Path.home() / "Documents" / "CCNHS_Scheduler"
+    app_dir.mkdir(parents=True, exist_ok=True) 
+    return str(app_dir / "school_scheduler.db")
+
+def init_db(db_path=None):
+    """Initializes the database schema using the centralized path logic."""
+    if db_path is None:
+        db_path = get_db_path()
         
-    return os.path.join(base_dir, "schedule_v1.db")
-
-def init_db() -> str:
-    """
-    Connects to SQLite (creating the file if it doesn't exist)
-    and sets up the tables.
-    """
-    # This ensures we know exactly where the file is
-    db_path = os.path.join(os.getcwd(), "school_scheduler.db")
-    print(f"!!! DATABASE IS AT: {db_path}") 
+    logging.info(f"DATABASE IS AT: {db_path}")
 
     with sqlite3.connect(db_path) as conn:
         cursor = conn.cursor()

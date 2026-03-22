@@ -1,5 +1,7 @@
 import sys
 import os
+import logging
+from pathlib import Path
 
 # This line ensures Python can find the 'src' folder regardless of where you run it from
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -10,6 +12,15 @@ from engine import DepEdValidator
 from ui.main_window import MainWindow
 
 def main():
+    # Set up logging to write to a file in the user's Documents folder
+    log_dir = Path.home() / "Documents" / "CCNHS_Scheduler"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    logging.basicConfig(
+        filename=str(log_dir / "scheduler.log"),
+        level=logging.INFO,
+        format="%(asctime)s - %(levelname)s - %(message)s"
+    )
+
     app = QApplication(sys.argv)
     app.setStyle("Fusion") # Consistent look across all PCs
     
