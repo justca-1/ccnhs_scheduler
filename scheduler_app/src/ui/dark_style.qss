@@ -1,25 +1,25 @@
 QMainWindow, QDialog {
-    background-color: #FFFDF5; 
+    background-color: #121212; 
 }
 
 QLabel, QCheckBox {
-    color: #333333;
+    color: #E0E0E0;
 }
 
 /* Card Container */
 #Card {
-    background-color: #FFFFFF;
-    border: 1px solid #E8EEDD;
+    background-color: #1E1E1E;
+    border: 1px solid #333333;
     border-radius: 15px;
 }
 
 /* Modern Inputs */
 QLineEdit, QComboBox, QTimeEdit {
     padding: 10px;
-    border: 2px solid #E8EEDD;
+    border: 2px solid #333333;
     border-radius: 8px;
-    background-color: #FFFFFF;
-    color: #333333;
+    background-color: #2D2D2D;
+    color: #FFFFFF;
 }
 QLineEdit:focus, QComboBox:focus, QTimeEdit:focus {
     border: 2px solid #2ECC71;
@@ -27,7 +27,7 @@ QLineEdit:focus, QComboBox:focus, QTimeEdit:focus {
 
 /* Standard Buttons */
 QPushButton {
-    background-color: #FFFFFF;
+    background-color: #2D2D2D;
     border: 1px solid #2ECC71;
     border-radius: 8px;
     padding: 8px 16px;
@@ -35,83 +35,86 @@ QPushButton {
     color: #2ECC71;
 }
 QPushButton:hover {
-    background-color: #F1F8E9;
+    background-color: #3D3D3D;
 }
 
 /* Primary Action (Solid Green) */
 QPushButton#PrimaryAction {
     background-color: #2ECC71;
-    color: white;
+    color: #121212;
     border: none;
 }
 QPushButton#PrimaryAction:hover {
     background-color: #27AE60;
 }
 
-/* Danger Action (Red stays for safety) */
+/* Danger Action */
 QPushButton#DangerAction, QPushButton[text="Delete Selected"] {
     color: #E74C3C;
     border: 1px solid #E74C3C;
+    background-color: transparent;
 }
 QPushButton#DangerAction:hover, QPushButton[text="Delete Selected"]:hover {
-    background-color: #FDEDEC;
+    background-color: #3D2828;
 }
 
 /* Table Headers */
 QHeaderView::section {
-    background-color: #F1F8E9;
+    background-color: #1E1E1E;
     padding: 12px;
     border: none;
     border-bottom: 2px solid #2ECC71;
     font-weight: bold;
-    color: #1B5E20;
+    color: #2ECC71;
 }
 
-/* Grid Styling - Enhanced for Card Look */
+/* Grid Styling */
 QTableWidget {
-    background-color: white;
+    background-color: #1E1E1E;
     border-radius: 10px;
-    border: 1px solid #E8EEDD;
+    border: 1px solid #333333;
     font-size: 11px;
-    gridline-color: transparent; /* Hide default grid lines */
+    gridline-color: transparent;
+    color: #E0E0E0;
 }
 QTableWidget::item {
-    padding: 5px; /* Creates space inside the cell */
-    border-bottom: 1px solid #F1F8E9; /* Subtle separator instead of grid */
+    padding: 5px;
+    border-bottom: 1px solid #333333;
 }
 QTableWidget::item:selected {
-    background-color: #E8F5E9;
-    color: #1B5E20;
+    background-color: #2C3E50;
+    color: #FFFFFF;
 }
 
 /* Sidebar Navigation */
 QListWidget, QTreeWidget {
-    background-color: #FFFFFF;
-    border: 1px solid #E8EEDD;
+    background-color: #1E1E1E;
+    border: 1px solid #333333;
     border-radius: 10px;
     outline: none;
     padding: 5px;
     font-size: 14px;
+    color: #E0E0E0;
 }
 QListWidget::item, QTreeWidget::item {
     padding: 12px;
     border-radius: 8px;
-    color: #555;
+    color: #CCCCCC;
     margin-bottom: 5px;
 }
 QListWidget::item:selected, QTreeWidget::item:selected {
-    background-color: #F1F8E9;
-    color: #1B5E20;
-    border: 1px solid #C8E6C9;
+    background-color: #2C3E50;
+    color: #2ECC71;
+    border: 1px solid #2ECC71;
     font-weight: bold;
 }
 QListWidget::item:hover, QTreeWidget::item:hover {
-    background-color: #FAFAFA;
+    background-color: #2D2D2D;
 }
 
 QComboBox QAbstractItemView {
-    background-color: #FFFFFF;
-    color: #333333;
-    selection-background-color: #E8F5E9;
-    selection-color: #1B5E20;
+    background-color: #2D2D2D;
+    color: #FFFFFF;
+    selection-background-color: #2ECC71;
+    selection-color: #121212;
 }

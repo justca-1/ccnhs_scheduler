@@ -19,19 +19,37 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Offline Scheduling System - Dashboard")
         self.resize(1200, 850)
         self.undo_stack = [] # Stores lists of backup data
-        # Default classes, can be expanded via "Add Class"
-        self.known_classes = set(["Grade 7", "Grade 8", "Grade 9", "Grade 10"])
+        self.current_section_filter = None # Tracks active section filter
+        
+        # Pre-populate known classes with CCNHS sections
+        self.known_classes = set([
+            "Grade 7 - Rizal", "Grade 7 - Mabini", "Grade 7 - Bonifacio",
+            "Grade 8 - Luna", "Grade 8 - Jacinto", "Grade 8 - Silang",
+            "Grade 9 - Aquino", "Grade 9 - Del Pilar",
+            "Grade 10 - Dagohoy", "Grade 10 - Lapu-Lapu"
+        ])
 
         # Central Container
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
         self.main_layout = QHBoxLayout(self.central_widget)
 
-        # Sidebar (Navigation)
+        # Sidebar Container
+        self.sidebar_container = QWidget()
+        self.sidebar_layout = QVBoxLayout(self.sidebar_container)
+        self.sidebar_layout.setContentsMargins(0, 0, 0, 0)
+        
         self.sidebar = NavigationPanel(self.engine)
         self.sidebar.page_change_requested.connect(self.change_page)
         self.sidebar.class_id_selected.connect(self.load_schedule)
-        self.main_layout.addWidget(self.sidebar)
+        self.sidebar.section_selected.connect(self.on_section_selected)
+        self.sidebar_layout.addWidget(self.sidebar)
+        
+        self.theme_btn = QPushButton("🌙 Dark Mode")
+        self.theme_btn.clicked.connect(self.toggle_theme)
+        self.sidebar_layout.addWidget(self.theme_btn)
+        
+        self.main_layout.addWidget(self.sidebar_container)
 
         # Main Content Area
         self.main_stack = QStackedWidget()
@@ -45,6 +63,8 @@ class MainWindow(QMainWindow):
         # Add the Status Bar at the very bottom
         self.statusBar().showMessage(f"Database Loaded: {self.engine.db_path}")
 
+        self.is_dark_mode = False
+
         # Initial Data Load
         self.refresh_all()
         
@@ -52,11 +72,52 @@ class MainWindow(QMainWindow):
         self.change_page(0)
 
     def change_page(self, index):
+        # Clear filter if navigating directly to a main page via Category click
+        self.current_section_filter = None
         self.main_stack.setCurrentIndex(index)
+        # Force grid refresh in case we were just viewing a filtered section
+        self.refresh_all()
+        
+    def on_section_selected(self, section_name):
+        """Filters the grade view to show only a specific section."""
+        self.current_section_filter = section_name
+        
+        # Figure out which Grade this section belongs to (e.g., "Grade 7")
+        grade = section_name.split(" - ")[0]
+        
+        # Switch to that Grade's page (Stack Index)
+        stack_idx = self.sidebar.grade_map.get(grade, 1)
+        self.main_stack.setCurrentIndex(stack_idx)
+        
+        # Refresh grids (which will now apply the section filter)
+        self.refresh_all()
+        self.show_message(f"Filtering view to: {section_name}")
 
     def show_message(self, text, duration=3000):
         """Helper to show temporary messages (like 'Saved!') on the status bar."""
         self.statusBar().showMessage(text, duration)
+
+    def toggle_theme(self):
+        self.is_dark_mode = not self.is_dark_mode
+        if self.is_dark_mode:
+            self.theme_btn.setText("☀️ Light Mode")
+            self.apply_theme("dark_style.qss")
+        else:
+            self.theme_btn.setText("🌙 Dark Mode")
+            self.apply_theme("style.qss")
+        self.refresh_all()  # Refresh schedule grids to update colors
+
+    def apply_theme(self, stylesheet_name):
+        import os
+        try:
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            path = os.path.join(base_dir, stylesheet_name)
+            if os.path.exists(path):
+                with open(path, "r", encoding="utf-8") as f:
+                    from PyQt6.QtWidgets import QApplication
+                    QApplication.instance().setStyleSheet(f.read())
+        except Exception as e:
+            print(f"Could not load theme {stylesheet_name}: {e}")
 
     def init_person_management_ui(self):
         self.staff_tab = QWidget()
@@ -77,7 +138,7 @@ class MainWindow(QMainWindow):
             c_layout.setContentsMargins(15, 15, 15, 15)
             
             t_lbl = QLabel(title)
-            t_lbl.setStyleSheet("color: #555; font-size: 12px; font-weight: bold;")
+            t_lbl.setStyleSheet("color: gray; font-size: 12px; font-weight: bold;")
             
             v_lbl = QLabel("0")
             v_lbl.setFont(QFont("Arial", 20, QFont.Weight.Bold))
@@ -152,7 +213,6 @@ class MainWindow(QMainWindow):
         
         # The Missing Link: The Delete Button
         self.delete_person_btn = QPushButton("Delete Selected")
-        self.delete_person_btn.setStyleSheet("background-color: #FFEBEE; color: #B71C1C;")
         self.delete_person_btn.clicked.connect(self.delete_selected_person)
         
         btn_vbox.addWidget(self.delete_person_btn)
@@ -264,7 +324,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(title)
         
         desc = QLabel("The following double-bookings were detected in the database:")
-        desc.setStyleSheet("color: #666; margin-bottom: 10px;")
+        desc.setStyleSheet("color: gray; margin-bottom: 10px;")
         layout.addWidget(desc)
         
         self.conflict_table = QTableWidget()
@@ -273,19 +333,6 @@ class MainWindow(QMainWindow):
         self.conflict_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.conflict_table.verticalHeader().setVisible(False)
         
-        # Styling for the table
-        self.conflict_table.setStyleSheet("""
-            QTableWidget {
-                border: 1px solid #E0E0E0;
-            }
-            QHeaderView::section {
-                background-color: #FFEBEE;
-                color: #C0392B;
-                font-weight: bold;
-                border: none;
-                padding: 6px;
-            }
-        """)
         layout.addWidget(self.conflict_table)
         
         self.main_stack.addWidget(self.conflict_page)
@@ -553,7 +600,11 @@ class MainWindow(QMainWindow):
 
         # 2. Update Grids for 7-10
         for grade in self.grade_views.keys():
-            conflict_count += self.refresh_grade_grid(grade)
+            # Apply filter if the current filter belongs to this grade
+            filter_to_apply = None
+            if self.current_section_filter and self.current_section_filter.startswith(grade):
+                filter_to_apply = self.current_section_filter
+            conflict_count += self.refresh_grade_grid(grade, section_filter=filter_to_apply)
             
         # 3. Update Conflict Report Tab
         # (We use the data gathered during refresh_grade_grid or a fresh scan)
@@ -572,13 +623,16 @@ class MainWindow(QMainWindow):
     def get_subject_color(self, subject):
         """Generates a consistent pastel color for a subject string."""
         if not subject:
-            return QColor("#FFFDF5") # Default cream
+            return QColor("#2D2D2D") if getattr(self, 'is_dark_mode', False) else QColor("#FFFDF5")
         
         # Deterministic hash so "Math" is always the same color
         val = sum(map(ord, subject))
-        # Hue: 0-359, Saturation: 100 (Pastel), Lightness: 230 (Light/Bright)
         hue = (val * 137) % 360 
-        return QColor.fromHsl(hue, 100, 230)
+        
+        if getattr(self, 'is_dark_mode', False):
+            return QColor.fromHsl(hue, 120, 80)
+        else:
+            return QColor.fromHsl(hue, 100, 230)
 
     def refresh_conflict_table(self, s_map):
         """Populates the conflict report table."""
@@ -633,8 +687,8 @@ class MainWindow(QMainWindow):
                     
                     row_idx += 1
 
-    def refresh_grade_grid(self, grade_key):
-        """Populates the grid for a specific grade view based on its dropdown."""
+    def refresh_grade_grid(self, grade_key, section_filter=None):
+        """Populates the grid for a specific grade view, optionally filtered by section."""
         view_data = self.grade_views.get(grade_key)
         if not view_data: return 0
         
@@ -656,8 +710,11 @@ class MainWindow(QMainWindow):
                 t_val = self.time_slots[row]
                 
                 all_infos = s_map.get((d_val, t_val), [])
-                # Filter for ANY class in this grade level
-                busy_infos = [info for info in all_infos if grade_key in info.get('grade_level', '')]
+                
+                if section_filter:
+                    busy_infos = [info for info in all_infos if section_filter == info.get('grade_level', '')]
+                else:
+                    busy_infos = [info for info in all_infos if grade_key in info.get('grade_level', '')]
                 
                 if not busy_infos:
                     row += 1
@@ -693,7 +750,8 @@ class MainWindow(QMainWindow):
                     # Dynamic Color based on Subject
                     bg_color = self.get_subject_color(subject)
                     item.setBackground(QBrush(bg_color))
-                    item.setForeground(QBrush(QColor("#2c3e50"))) # Dark text
+                    text_color = QColor("#FFFFFF") if getattr(self, 'is_dark_mode', False) else QColor("#2c3e50")
+                    item.setForeground(QBrush(text_color)) # Dark text
                     item.setFont(QFont("Arial", weight=QFont.Weight.Bold))
                     item.setToolTip(f"Subject: {subject}\nTeacher: {name}\nRoom: {room}\nTime: {t_val}")
                 
@@ -706,8 +764,11 @@ class MainWindow(QMainWindow):
                     for next_r in range(row + 1, len(self.time_slots)):
                         next_t = self.time_slots[next_r]
                         next_infos = s_map.get((d_val, next_t), [])
-                        next_busy = [i for i in next_infos if grade_key in i.get('grade_level', '')]
-                        
+                        if section_filter:
+                            next_busy = [i for i in next_infos if section_filter == i.get('grade_level', '')]
+                        else:
+                            next_busy = [i for i in next_infos if grade_key in i.get('grade_level', '')]
+                            
                         # Stop if empty, conflict, or different subject/teacher
                         if len(next_busy) == 1 and \
                            next_busy[0]['name'] == name and \

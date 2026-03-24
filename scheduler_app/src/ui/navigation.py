@@ -13,6 +13,9 @@ class NavigationPanel(QTreeWidget):
     
     # Signal to load a specific class/person schedule (passes database ID)
     class_id_selected = pyqtSignal(int)
+    
+    # Signal to filter the main view by a specific section
+    section_selected = pyqtSignal(str)
 
     def __init__(self, engine):
         """
@@ -27,7 +30,8 @@ class NavigationPanel(QTreeWidget):
 
     def _setup_ui(self):
         """Configures the visual properties of the tree."""
-        self.setHeaderHidden(True)
+        self.setHeaderLabel("CCNHS Sections")
+        self.setHeaderHidden(False)
         self.setIndentation(20)
         self.setRootIsDecorated(True)
         self.setAnimated(True)
@@ -44,12 +48,6 @@ class NavigationPanel(QTreeWidget):
         """
         self.clear()
         
-        # --- 1. Staff Management (Fixed Top Node) ---
-        staff_node = QTreeWidgetItem(self)
-        staff_node.setText(0, "👥 Staff Management")
-        # Store Page Index 0 for Staff Management
-        staff_node.setData(0, Qt.ItemDataRole.UserRole, 0) 
-        
         # --- 2. Grade Level Parent Nodes ---
         # Map Grade Name -> Stack Index (Matches MainWindow order)
         self.grade_map = {
@@ -59,14 +57,42 @@ class NavigationPanel(QTreeWidget):
             "Grade 10": 4
         }
         
+        # Define default Grades and Sections
+        grades = {
+            "Grade 7": ["Rizal", "Mabini", "Bonifacio"],
+            "Grade 8": ["Luna", "Jacinto", "Silang"],
+            "Grade 9": ["Aquino", "Del Pilar"],
+            "Grade 10": ["Dagohoy", "Lapu-Lapu"]
+        }
+        
+        # Merge dynamically added classes from the database
+        try:
+            db_classes = self.engine.get_unique_grade_levels()
+            for db_c in db_classes:
+                if " - " in db_c:
+                    g, s = db_c.split(" - ", 1)
+                    if g in grades and s not in grades[g]:
+                        grades[g].append(s)
+                    elif g not in grades:
+                        grades[g] = [s]
+        except Exception:
+            pass # Failsafe
+        
         self.grade_items = {}
-        for grade, stack_idx in self.grade_map.items():
-            item = QTreeWidgetItem(self)
-            item.setText(0, grade)
+        for grade, sections in grades.items():
+            parent = QTreeWidgetItem(self, [grade])
             # Store Stack Index for Page Switching
-            item.setData(0, Qt.ItemDataRole.UserRole, stack_idx)
+            parent.setData(0, Qt.ItemDataRole.UserRole, self.grade_map.get(grade, 1))
             
-            self.grade_items[grade] = item
+            self.grade_items[grade] = parent
+            
+            for section in sections:
+                child = QTreeWidgetItem(parent, [section])
+                child.setData(0, Qt.ItemDataRole.UserRole, f"SECTION:{grade} - {section}")
+
+        # --- 1. Staff Management (Fixed Node) ---
+        staff_node = QTreeWidgetItem(self, ["👥 Staff Management"])
+        staff_node.setData(0, Qt.ItemDataRole.UserRole, 0) 
 
         # --- 3. Conflict Report (Dedicated View) ---
         conflict_node = QTreeWidgetItem(self)
@@ -85,21 +111,9 @@ class NavigationPanel(QTreeWidget):
         for person in persons:
             person_id = person['person_id']
             name = person['full_name']
-            role = str(person['role']) if person['role'] else ""
-
-            # Determine which Grade Level this class/person belongs to.
-            target_node = None
-            for grade in self.grade_map.keys():
-                if grade in role:
-                    target_node = self.grade_items[grade]
-                    break
             
-            if target_node:
-                child = QTreeWidgetItem(target_node)
-                child.setText(0, name)
-                
-                # Store the UNIQUE DATABASE ID for retrieval
-                child.setData(0, Qt.ItemDataRole.UserRole, person_id)
+            child = QTreeWidgetItem(staff_node, [name])
+            child.setData(0, Qt.ItemDataRole.UserRole, f"PERSON:{person_id}")
 
     def _on_item_clicked(self, item, column):
         """Handles item clicks. Distinguishes between Page Navigation and Schedule Loading."""
@@ -108,15 +122,14 @@ class NavigationPanel(QTreeWidget):
         if data is None:
             return
 
-        # Logic: If item has no parent, it's a Category (Page Switch).
-        # If it has a parent, it's a Class/Person (Load Schedule).
-        if item.parent() is None:
-            # It's a Page Index (0-6)
+        if isinstance(data, str) and data.startswith("SECTION:"):
+            section_name = data.replace("SECTION:", "")
+            self.section_selected.emit(section_name)
+        elif isinstance(data, str) and data.startswith("PERSON:"):
+            person_id = int(data.replace("PERSON:", ""))
+            self.class_id_selected.emit(person_id)
+        elif isinstance(data, int):
             self.page_change_requested.emit(data)
             
-            # Toggle visibility of children (Accordion style)
             if item.childCount() > 0:
                 item.setExpanded(not item.isExpanded())
-        else:
-            # It's a Person ID (Database Integer)
-            self.class_id_selected.emit(data)

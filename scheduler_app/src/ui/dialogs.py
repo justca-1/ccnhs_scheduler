@@ -218,7 +218,7 @@ class AddScheduleDialog(QDialog):
 
         # Visual Feedback
         if conflicting_days:
-            style = "border: 1px solid #E74C3C; background-color: #FDEDEC;"
+            style = "border: 1px solid #E74C3C; background-color: rgba(231, 76, 60, 0.1);"
             
             # Show detailed error directly on the UI
             msg = "\n".join(tooltip_lines)
@@ -306,10 +306,12 @@ class PersonScheduleDialog(QDialog):
                     text = "\n".join([f"{x['grade_level']} ({x['role']})" for x in infos])
                     item = QTableWidgetItem(text)
                     item.setBackground(QBrush(QColor("#C8E6C9")))
+                    item.setForeground(QBrush(QColor("#121212")))
                     item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                     
                     if len(infos) > 1:
                          item.setBackground(QBrush(QColor("#FF7043"))) # Conflict color
+                         item.setForeground(QBrush(QColor("white")))
                          item.setText(text + "\n(Double Booked!)")
                     
                     self.grid.setItem(row, col, item)
