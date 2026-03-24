@@ -104,11 +104,12 @@ class MainWindow(QMainWindow):
             self.apply_theme("dark_style.qss")
         else:
             self.theme_btn.setText("🌙 Dark Mode")
-            self.apply_theme("style.qss")
+            self.apply_theme("light_style.qss")
         self.refresh_all()  # Refresh schedule grids to update colors
 
     def apply_theme(self, stylesheet_name):
         import os
+        import logging
         try:
             base_dir = os.path.dirname(os.path.abspath(__file__))
             path = os.path.join(base_dir, stylesheet_name)
@@ -116,8 +117,10 @@ class MainWindow(QMainWindow):
                 with open(path, "r", encoding="utf-8") as f:
                     from PyQt6.QtWidgets import QApplication
                     QApplication.instance().setStyleSheet(f.read())
+            else:
+                logging.error(f"Stylesheet {stylesheet_name} not found at {path}!")
         except Exception as e:
-            print(f"Could not load theme {stylesheet_name}: {e}")
+            logging.error(f"Could not load theme {stylesheet_name}: {e}")
 
     def init_person_management_ui(self):
         self.staff_tab = QWidget()
@@ -682,7 +685,9 @@ class MainWindow(QMainWindow):
                     names = ", ".join([x['name'] for x in group])
                     msg = f"Double Booked: {names}"
                     item = QTableWidgetItem(msg)
-                    item.setForeground(QBrush(QColor("#C0392B")))
+                    is_dark = getattr(self, 'is_dark_mode', False)
+                    conflict_text_color = "#FF8A80" if is_dark else "#C0392B"
+                    item.setForeground(QBrush(QColor(conflict_text_color)))
                     self.conflict_table.setItem(row_idx, 3, item)
                     
                     row_idx += 1
@@ -742,7 +747,9 @@ class MainWindow(QMainWindow):
                 
                 # --- 2. Styling & Color Coding ---
                 if is_conflict:
-                    item.setBackground(QBrush(QColor("#FF7043")))
+                    is_dark = getattr(self, 'is_dark_mode', False)
+                    conflict_bg_color = "#FF8A80" if is_dark else "#FF7043"
+                    item.setBackground(QBrush(QColor(conflict_bg_color)))
                     item.setForeground(QBrush(QColor("white")))
                     item.setToolTip("⚠️ Multiple people scheduled")
                     local_conflicts += 1

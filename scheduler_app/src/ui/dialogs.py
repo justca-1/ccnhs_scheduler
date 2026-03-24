@@ -218,11 +218,15 @@ class AddScheduleDialog(QDialog):
 
         # Visual Feedback
         if conflicting_days:
-            style = "border: 1px solid #E74C3C; background-color: rgba(231, 76, 60, 0.1);"
+            is_dark = getattr(self.parent(), 'is_dark_mode', False)
+            border_color = "#FF8A80" if is_dark else "#E74C3C"
+            bg_color = "rgba(255, 138, 128, 0.1)" if is_dark else "rgba(231, 76, 60, 0.1)"
+            style = f"border: 1px solid {border_color}; background-color: {bg_color};"
             
             # Show detailed error directly on the UI
             msg = "\n".join(tooltip_lines)
             self.conflict_lbl.setText(msg)
+            self.conflict_lbl.setStyleSheet(f"color: {border_color}; font-size: 11px;")
             self.btn_save.setEnabled(False) # Prevent saving
             
             self.person_selector.setToolTip(msg)
@@ -310,7 +314,9 @@ class PersonScheduleDialog(QDialog):
                     item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                     
                     if len(infos) > 1:
-                         item.setBackground(QBrush(QColor("#FF7043"))) # Conflict color
+                         is_dark = getattr(self.parent(), 'is_dark_mode', False)
+                         conflict_color = "#FF8A80" if is_dark else "#FF7043"
+                         item.setBackground(QBrush(QColor(conflict_color))) # Conflict color
                          item.setForeground(QBrush(QColor("white")))
                          item.setText(text + "\n(Double Booked!)")
                     
