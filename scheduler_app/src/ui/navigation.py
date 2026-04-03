@@ -37,6 +37,7 @@ class NavigationPanel(QTreeWidget):
         self.setAnimated(True)
         self.setFixedWidth(220)
         self.setExpandsOnDoubleClick(False) # Expand on single click, not double
+        self.setFrameShape(QTreeWidget.Shape.NoFrame) # Removes the visual gap border
         
         # Connect the click signal to our handler
         self.itemClicked.connect(self._on_item_clicked)

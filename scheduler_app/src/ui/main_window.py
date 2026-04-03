@@ -49,7 +49,7 @@ class MainWindow(QMainWindow):
         self.sidebar.section_selected.connect(self.on_section_selected)
         self.sidebar_layout.addWidget(self.sidebar)
         
-        self.main_layout.addWidget(self.sidebar_container)
+        self.main_layout.addWidget(self.sidebar_container, 0) # 0 stretch = stay fixed size
 
         # Right Content Area (Top bar + Main Stack)
         self.right_container = QWidget()
@@ -80,7 +80,7 @@ class MainWindow(QMainWindow):
         self.main_stack = QStackedWidget()
         self.right_layout.addWidget(self.main_stack)
         
-        self.main_layout.addWidget(self.right_container)
+        self.main_layout.addWidget(self.right_container, 1) # 1 stretch = take up all remaining space
 
         # Initialize Sections
         self.init_person_management_ui()
@@ -257,6 +257,7 @@ class MainWindow(QMainWindow):
         self.people_table.setColumnCount(2)
         self.people_table.setHorizontalHeaderLabels(["ID", "Full Name"])
         self.people_table.setFixedHeight(180) 
+        self.people_table.setFrameShape(QTableWidget.Shape.NoFrame) # Removes the border
         
         # Enable multi-row selection
         self.people_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -401,6 +402,7 @@ class MainWindow(QMainWindow):
         self.conflict_table.setHorizontalHeaderLabels(["Who / Class", "Day", "Time Slot", "Conflict Details"])
         self.conflict_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.conflict_table.verticalHeader().setVisible(False)
+        self.conflict_table.setFrameShape(QTableWidget.Shape.NoFrame) # Removes the border
         
         layout.addWidget(self.conflict_table)
         
@@ -418,6 +420,7 @@ class MainWindow(QMainWindow):
         grid.verticalHeader().setDefaultSectionSize(50) # Increase this value to make rows taller
         grid.verticalHeader().setFixedWidth(70) # Increase this value to make the time column wider
         grid.setShowGrid(False) # Hide default grid lines for card-like look
+        grid.setFrameShape(QTableWidget.Shape.NoFrame) # Snaps perfectly to the side panel
 
     # --- ACTION METHODS ---
 
