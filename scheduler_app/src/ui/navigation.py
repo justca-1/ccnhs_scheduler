@@ -46,6 +46,13 @@ class NavigationPanel(QTreeWidget):
         Queries the database and repopulates the tree.
         Call this method whenever a new class or person is added.
         """
+        # Save the current expanded state of top-level items so they don't collapse on refresh
+        expanded_items = set()
+        for i in range(self.topLevelItemCount()):
+            top_item = self.topLevelItem(i)
+            if top_item.isExpanded():
+                expanded_items.add(top_item.text(0))
+
         self.clear()
         
         # --- 2. Grade Level Parent Nodes ---
@@ -90,9 +97,16 @@ class NavigationPanel(QTreeWidget):
                 child = QTreeWidgetItem(parent, [section])
                 child.setData(0, Qt.ItemDataRole.UserRole, f"SECTION:{grade} - {section}")
 
+            # Restore expanded state for the grade
+            if parent.text(0) in expanded_items:
+                parent.setExpanded(True)
+
         # --- 1. Staff Management (Fixed Node) ---
         staff_node = QTreeWidgetItem(self, ["👥 Staff Management"])
         staff_node.setData(0, Qt.ItemDataRole.UserRole, 0) 
+        
+        if staff_node.text(0) in expanded_items:
+            staff_node.setExpanded(True)
 
         # --- 3. Conflict Report (Dedicated View) ---
         conflict_node = QTreeWidgetItem(self)
@@ -129,7 +143,8 @@ class NavigationPanel(QTreeWidget):
             person_id = int(data.replace("PERSON:", ""))
             self.class_id_selected.emit(person_id)
         elif isinstance(data, int):
-            self.page_change_requested.emit(data)
-            
+            # Manipulate the item BEFORE emitting the signal that triggers the refresh
             if item.childCount() > 0:
                 item.setExpanded(not item.isExpanded())
+                
+            self.page_change_requested.emit(data)

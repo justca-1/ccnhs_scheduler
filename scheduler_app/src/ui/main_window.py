@@ -3,8 +3,10 @@ from PyQt6.QtWidgets import (
     QTableWidgetItem, QPushButton, QHBoxLayout, QHeaderView, QLabel, QMessageBox, QSplitter, QLineEdit, QTabWidget, QListWidget, QStackedWidget, QAbstractItemView,
     QGraphicsBlurEffect, QInputDialog, QMenu, QComboBox, QTreeWidget, QTreeWidgetItem
 )
-from PyQt6.QtGui import QColor, QBrush, QFont, QAction
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtGui import QColor, QBrush, QFont, QAction, QIcon
+from PyQt6.QtCore import Qt, pyqtSignal, QSize
+import os
+
 try:
     from .dialogs import AddPersonDialog, AddScheduleDialog, PersonScheduleDialog, AddClassDialog
     from .navigation import NavigationPanel
@@ -33,6 +35,8 @@ class MainWindow(QMainWindow):
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
         self.main_layout = QHBoxLayout(self.central_widget)
+        self.main_layout.setContentsMargins(0, 0, 0, 0)
+        self.main_layout.setSpacing(0)
 
         # Sidebar Container
         self.sidebar_container = QWidget()
@@ -45,15 +49,38 @@ class MainWindow(QMainWindow):
         self.sidebar.section_selected.connect(self.on_section_selected)
         self.sidebar_layout.addWidget(self.sidebar)
         
-        self.theme_btn = QPushButton("🌙 Dark Mode")
-        self.theme_btn.clicked.connect(self.toggle_theme)
-        self.sidebar_layout.addWidget(self.theme_btn)
-        
         self.main_layout.addWidget(self.sidebar_container)
+
+        # Right Content Area (Top bar + Main Stack)
+        self.right_container = QWidget()
+        self.right_layout = QVBoxLayout(self.right_container)
+        self.right_layout.setContentsMargins(0, 0, 0, 0)
+
+        # Top Bar for Theme Button
+        self.top_bar = QHBoxLayout()
+        self.top_bar.setContentsMargins(0, 10, 10, 0) # Add padding just for the button
+        self.top_bar.addStretch() # Pushes the button to the right
+        
+        self.theme_btn = QPushButton()
+        self.theme_btn.setFixedSize(30, 30) # Small size
+        self.theme_btn.setToolTip("Toggle Dark Mode")
+        self.theme_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.theme_btn.setStyleSheet("padding: 0px; border: none; background: transparent;")
+        
+        # Load initial moon icon from an 'icons' folder next to this file
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        self.theme_btn.setIcon(QIcon(os.path.join(base_dir, "icons", "moon.png"))) # Change to .svg if using SVGs
+        self.theme_btn.setIconSize(QSize(24, 24)) # Scales the icon cleanly inside the 30x30 button
+        
+        self.theme_btn.clicked.connect(self.toggle_theme)
+        self.top_bar.addWidget(self.theme_btn)
+        self.right_layout.addLayout(self.top_bar)
 
         # Main Content Area
         self.main_stack = QStackedWidget()
-        self.main_layout.addWidget(self.main_stack)
+        self.right_layout.addWidget(self.main_stack)
+        
+        self.main_layout.addWidget(self.right_container)
 
         # Initialize Sections
         self.init_person_management_ui()
@@ -98,14 +125,17 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(text, duration)
 
     def toggle_theme(self):
+        base_dir = os.path.dirname(os.path.abspath(__file__))
         self.is_dark_mode = not self.is_dark_mode
         if self.is_dark_mode:
-            self.theme_btn.setText("☀️ Light Mode")
+            self.theme_btn.setIcon(QIcon(os.path.join(base_dir, "icons", "sun.svg")))
+            self.theme_btn.setToolTip("Toggle Light Mode")
             self.apply_theme("dark_style.qss")
         else:
-            self.theme_btn.setText("🌙 Dark Mode")
+            self.theme_btn.setIcon(QIcon(os.path.join(base_dir, "icons", "moon.svg")))
+            self.theme_btn.setToolTip("Toggle Dark Mode")
             self.apply_theme("light_style.qss")
-        self.refresh_all()  # Refresh schedule grids to update colors
+        self.update_theme_colors()  # Instantly update existing item colors
 
     def apply_theme(self, stylesheet_name):
         import os
@@ -122,12 +152,48 @@ class MainWindow(QMainWindow):
         except Exception as e:
             logging.error(f"Could not load theme {stylesheet_name}: {e}")
 
+    def update_theme_colors(self):
+        """Updates the colors of existing UI elements without doing a full data refresh."""
+        is_dark = getattr(self, 'is_dark_mode', False)
+        
+        # 1. Update Conflict Report Table
+        conflict_text_color = QColor("#FF8A80" if is_dark else "#C0392B")
+        for r in range(self.conflict_table.rowCount()):
+            item = self.conflict_table.item(r, 3)
+            if item and "Double Booked:" in item.text():
+                item.setForeground(QBrush(conflict_text_color))
+                
+        # 2. Update Grade Views (Schedule Grids)
+        conflict_bg_color = QColor("#FF8A80" if is_dark else "#FF7043")
+        text_color = QColor("#FFFFFF") if is_dark else QColor("#2c3e50")
+        
+        for view_data in self.grade_views.values():
+            grid = view_data['grid']
+            for r in range(grid.rowCount()):
+                for c in range(grid.columnCount()):
+                    item = grid.item(r, c)
+                    if item:
+                        text = item.text()
+                        if "⚠️ CONFLICT" in text:
+                            item.setBackground(QBrush(conflict_bg_color))
+                            item.setForeground(QBrush(QColor("white")))
+                        else:
+                            # Extract subject from tooltip to determine original color
+                            tooltip = item.toolTip()
+                            subject = ""
+                            if tooltip and tooltip.startswith("Subject: "):
+                                subject = tooltip.split("\n")[0].replace("Subject: ", "")
+                            
+                            bg_color = self.get_subject_color(subject)
+                            item.setBackground(QBrush(bg_color))
+                            item.setForeground(QBrush(text_color))
+
     def init_person_management_ui(self):
         self.staff_tab = QWidget()
         self.staff_tab.setObjectName("Card")
         # Setting layout margins creates the 'float' effect over the cream background
         layout = QVBoxLayout(self.staff_tab)
-        layout.setContentsMargins(25, 25, 25, 25) 
+        layout.setContentsMargins(0, 20, 20, 20) # 0 left margin to connect to side panel
         layout.setSpacing(15)
 
         # --- STATUS CARDS (Calculated Widgets) ---
@@ -305,7 +371,7 @@ class MainWindow(QMainWindow):
             
             container = QWidget()
             layout = QVBoxLayout(container)
-            layout.setContentsMargins(10, 10, 10, 10)
+            layout.setContentsMargins(0, 0, 10, 10) # 0 left margin to connect grid to side panel
             
             grid = QTableWidget()
             self._setup_grid(grid, days, self.time_slots)
@@ -319,7 +385,7 @@ class MainWindow(QMainWindow):
         """Page Index 5: The dedicated Conflict Report."""
         self.conflict_page = QWidget()
         layout = QVBoxLayout(self.conflict_page)
-        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setContentsMargins(0, 20, 20, 20) # 0 left margin to connect to side panel
         
         title = QLabel("⚠️ System Conflict Report")
         title.setFont(QFont("Arial", 16, QFont.Weight.Bold))
