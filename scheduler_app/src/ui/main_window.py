@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QTableWidget, 
-    QTableWidgetItem, QPushButton, QHBoxLayout, QHeaderView, QLabel, QMessageBox, QSplitter, QLineEdit, QTabWidget, QListWidget, QStackedWidget, QAbstractItemView,
+    QTableWidgetItem, QPushButton, QHBoxLayout, QHeaderView, QLabel, QMessageBox, QSplitter, QLineEdit, QTabWidget, QListWidget, QListWidgetItem, QStackedWidget, QAbstractItemView,
     QGraphicsBlurEffect, QInputDialog, QMenu, QComboBox, QTreeWidget, QTreeWidgetItem
 )
 from PyQt6.QtGui import QColor, QBrush, QFont, QAction, QIcon
@@ -46,7 +46,6 @@ class MainWindow(QMainWindow):
         self.sidebar = NavigationPanel(self.engine)
         self.sidebar.page_change_requested.connect(self.change_page)
         self.sidebar.class_id_selected.connect(self.load_schedule)
-        self.sidebar.section_selected.connect(self.on_section_selected)
         self.sidebar_layout.addWidget(self.sidebar)
         
         self.main_layout.addWidget(self.sidebar_container, 0) # 0 stretch = stay fixed size
@@ -61,16 +60,16 @@ class MainWindow(QMainWindow):
         self.top_bar.setContentsMargins(0, 10, 10, 0) # Add padding just for the button
         self.top_bar.addStretch() # Pushes the button to the right
         
-        self.theme_btn = QPushButton()
-        self.theme_btn.setFixedSize(30, 30) # Small size
-        self.theme_btn.setToolTip("Toggle Dark Mode")
+        self.theme_btn = QPushButton(" Dark Mode")
+        self.theme_btn.setFixedSize(120, 36) # Larger size to accommodate text and icon
+        self.theme_btn.setToolTip("Toggle Dark/Light Mode")
         self.theme_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.theme_btn.setStyleSheet("padding: 0px; border: none; background: transparent;")
+        self.theme_btn.setStyleSheet("font-weight: bold; padding: 5px;")
         
         # Load initial moon icon from an 'icons' folder next to this file
         base_dir = os.path.dirname(os.path.abspath(__file__))
         self.theme_btn.setIcon(QIcon(os.path.join(base_dir, "icons", "moon.png"))) # Change to .svg if using SVGs
-        self.theme_btn.setIconSize(QSize(24, 24)) # Scales the icon cleanly inside the 30x30 button
+        self.theme_btn.setIconSize(QSize(20, 20)) # Scales the icon cleanly
         
         self.theme_btn.clicked.connect(self.toggle_theme)
         self.top_bar.addWidget(self.theme_btn)
@@ -101,24 +100,45 @@ class MainWindow(QMainWindow):
     def change_page(self, index):
         # Clear filter if navigating directly to a main page via Category click
         self.current_section_filter = None
+        
+        # Reset all combos to "All Sections" without immediately triggering a refresh
+        for view_data in self.grade_views.values():
+            if 'combo' in view_data:
+                view_data['combo'].blockSignals(True)
+                view_data['combo'].setCurrentIndex(0)
+                view_data['combo'].blockSignals(False)
+            if 'stack' in view_data:
+                view_data['stack'].setCurrentIndex(0)
+                
         self.main_stack.setCurrentIndex(index)
         # Force grid refresh in case we were just viewing a filtered section
         self.refresh_all()
         
-    def on_section_selected(self, section_name):
-        """Filters the grade view to show only a specific section."""
-        self.current_section_filter = section_name
+    def on_combo_filter_changed(self, grade_name):
+        """Filters the grade view when the dropdown changes."""
+        view_data = self.grade_views.get(grade_name)
+        if not view_data: return
         
-        # Figure out which Grade this section belongs to (e.g., "Grade 7")
-        grade = section_name.split(" - ")[0]
+        combo = view_data['combo']
+        section_data = combo.currentData()
+        self.current_section_filter = section_data
         
-        # Switch to that Grade's page (Stack Index)
-        stack_idx = self.sidebar.grade_map.get(grade, 1)
-        self.main_stack.setCurrentIndex(stack_idx)
-        
-        # Refresh grids (which will now apply the section filter)
+        if section_data is None:
+            view_data['stack'].setCurrentIndex(0)
+        else:
+            view_data['stack'].setCurrentIndex(1)
+            
         self.refresh_all()
-        self.show_message(f"Filtering view to: {section_name}")
+
+    def on_section_list_item_clicked(self, item, grade_name):
+        view_data = self.grade_views.get(grade_name)
+        if not view_data: return
+        combo = view_data['combo']
+        section_data = item.data(Qt.ItemDataRole.UserRole)
+        
+        idx = combo.findData(section_data)
+        if idx >= 0:
+            combo.setCurrentIndex(idx)
 
     def show_message(self, text, duration=3000):
         """Helper to show temporary messages (like 'Saved!') on the status bar."""
@@ -129,10 +149,12 @@ class MainWindow(QMainWindow):
         self.is_dark_mode = not self.is_dark_mode
         if self.is_dark_mode:
             self.theme_btn.setIcon(QIcon(os.path.join(base_dir, "icons", "sun.svg")))
+            self.theme_btn.setText(" Light Mode")
             self.theme_btn.setToolTip("Toggle Light Mode")
             self.apply_theme("dark_style.qss")
         else:
             self.theme_btn.setIcon(QIcon(os.path.join(base_dir, "icons", "moon.svg")))
+            self.theme_btn.setText(" Dark Mode")
             self.theme_btn.setToolTip("Toggle Dark Mode")
             self.apply_theme("light_style.qss")
         self.update_theme_colors()  # Instantly update existing item colors
@@ -219,7 +241,8 @@ class MainWindow(QMainWindow):
             return v_lbl
 
         self.stat_staff = create_stat_card("TOTAL STAFF")
-        self.stat_conflicts = create_stat_card("GLOBAL CONFLICTS", "#E74C3C")
+        self.stat_teacher_conflicts = create_stat_card("TEACHER CONFLICTS", "#E74C3C")
+        self.stat_class_conflicts = create_stat_card("CLASS CONFLICTS", "#E74C3C")
         self.stat_schedules = create_stat_card("ACTIVE SCHEDULES")
 
         layout.addLayout(stats_layout)
@@ -239,14 +262,10 @@ class MainWindow(QMainWindow):
         self.add_person_btn = QPushButton("Add New Person")
         self.add_person_btn.clicked.connect(self.open_add_person_dialog)
         
-        self.add_class_btn = QPushButton("Add Class")
-        self.add_class_btn.clicked.connect(self.open_add_class_dialog)
-        
         self.add_schedule_btn = QPushButton("Assign Busy Time")
         self.add_schedule_btn.clicked.connect(self.open_add_schedule_dialog)
         
         action_layout.addWidget(self.add_person_btn)
-        action_layout.addWidget(self.add_class_btn)
         action_layout.addWidget(self.add_schedule_btn)
         action_layout.addStretch()
         layout.addLayout(action_layout)
@@ -374,13 +393,69 @@ class MainWindow(QMainWindow):
             layout = QVBoxLayout(container)
             layout.setContentsMargins(0, 0, 10, 10) # 0 left margin to connect grid to side panel
             
+            # --- Top bar for filtering ---
+            top_layout = QHBoxLayout()
+            top_layout.setContentsMargins(20, 10, 0, 10)
+            
+            title_lbl = QLabel(f"{grade_name} Schedule")
+            title_lbl.setFont(QFont("Arial", 14, QFont.Weight.Bold))
+            
+            add_class_btn = QPushButton("Add Class")
+            add_class_btn.clicked.connect(lambda checked, g=grade_name: self.open_add_class_dialog(g))
+            
+            filter_lbl = QLabel("Filter Section:")
+            filter_lbl.setStyleSheet("color: gray;")
+            
+            filter_combo = QComboBox()
+            filter_combo.setFixedWidth(200)
+            filter_combo.addItem("All Sections", userData=None)
+            filter_combo.currentIndexChanged.connect(lambda idx, g=grade_name: self.on_combo_filter_changed(g))
+            
+            top_layout.addWidget(title_lbl)
+            top_layout.addWidget(add_class_btn)
+            top_layout.addStretch()
+            top_layout.addWidget(filter_lbl)
+            top_layout.addWidget(filter_combo)
+            
+            layout.addLayout(top_layout)
+
+            # --- Stacked Widget for this Grade ---
+            grade_stack = QStackedWidget()
+            layout.addWidget(grade_stack)
+            
+            # Page 0: Sections List
+            sections_page = QWidget()
+            sections_layout = QVBoxLayout(sections_page)
+            sections_layout.setContentsMargins(20, 0, 20, 20)
+            
+            sections_label = QLabel("Select a section to view its timetable:")
+            sections_label.setStyleSheet("color: gray; font-size: 14px;")
+            sections_layout.addWidget(sections_label)
+            
+            sections_list = QListWidget()
+            sections_list.setFrameShape(QListWidget.Shape.NoFrame)
+            sections_list.itemClicked.connect(lambda item, g=grade_name: self.on_section_list_item_clicked(item, g))
+            sections_layout.addWidget(sections_list)
+            grade_stack.addWidget(sections_page)
+            
+            # Page 1: Timetable
+            timetable_page = QWidget()
+            timetable_layout = QVBoxLayout(timetable_page)
+            timetable_layout.setContentsMargins(0, 0, 0, 0)
+            
             grid = QTableWidget()
             self._setup_grid(grid, days, self.time_slots)
-            layout.addWidget(grid)
+            timetable_layout.addWidget(grid)
+            grade_stack.addWidget(timetable_page)
             
             self.main_stack.addWidget(container)
             
-            self.grade_views[grade_name] = {'grid': grid}
+            self.grade_views[grade_name] = {
+                'grid': grid, 
+                'combo': filter_combo,
+                'stack': grade_stack,
+                'list': sections_list
+            }
             
     def init_conflict_report_ui(self):
         """Page Index 5: The dedicated Conflict Report."""
@@ -667,29 +742,68 @@ class MainWindow(QMainWindow):
                     if f"Grade {i}" in grade_buckets:
                         grade_buckets[f"Grade {i}"].add(c_name)
                     break
-        
-        conflict_count = 0 # Counter for our Status Bar UX
 
+        # --- Update Section Dropdowns ---
+        for grade, view_data in self.grade_views.items():
+            combo = view_data.get('combo')
+            sec_list = view_data.get('list')
+            stack = view_data.get('stack')
+            if combo and sec_list and stack:
+                current_text = combo.currentText()
+                combo.blockSignals(True)
+                combo.clear()
+                combo.addItem("All Sections", userData=None)
+                
+                sec_list.blockSignals(True)
+                sec_list.clear()
+                
+                sections = sorted(list(grade_buckets.get(grade, set())))
+                for sec in sections:
+                    display_name = sec.split(" - ")[1] if " - " in sec else sec
+                    combo.addItem(display_name, userData=sec)
+                    
+                    list_item = QListWidgetItem(display_name)
+                    list_item.setData(Qt.ItemDataRole.UserRole, sec)
+                    list_item.setFont(QFont("Arial", 12))
+                    sec_list.addItem(list_item)
+                
+                idx = combo.findText(current_text)
+                if idx >= 0:
+                    combo.setCurrentIndex(idx)
+                else:
+                    if self.current_section_filter and self.current_section_filter.startswith(grade):
+                        self.current_section_filter = None
+                    combo.setCurrentIndex(0)
+                    
+                if combo.currentData() is None:
+                    stack.setCurrentIndex(0)
+                else:
+                    stack.setCurrentIndex(1)
+                    
+                combo.blockSignals(False)
+                sec_list.blockSignals(False)
+        
         # 2. Update Grids for 7-10
         for grade in self.grade_views.keys():
             # Apply filter if the current filter belongs to this grade
             filter_to_apply = None
             if self.current_section_filter and self.current_section_filter.startswith(grade):
                 filter_to_apply = self.current_section_filter
-            conflict_count += self.refresh_grade_grid(grade, section_filter=filter_to_apply)
+            self.refresh_grade_grid(grade, section_filter=filter_to_apply)
             
-        # 3. Update Conflict Report Tab
-        # (We use the data gathered during refresh_grade_grid or a fresh scan)
-        # For simplicity, let's run a fresh scan of the map to populate the table
-        self.refresh_conflict_table(s_map)
+        # 3. Update Conflict Report Tab & Global Stats
+        # Using the raw map gives us true database conflicts (ignoring visual overlaps from "All Sections")
+        teacher_conflicts, class_conflicts = self.refresh_conflict_table(s_map)
+        total_conflicts = teacher_conflicts + class_conflicts
 
         # Update the Status Bar with the conflict tally
-        status_msg = f"Database: {self.engine.db_path} | ⚠️ Conflicts: {conflict_count}"
+        status_msg = f"Database: {self.engine.db_path} | ⚠️ Conflicts: {total_conflicts}"
         self.statusBar().showMessage(status_msg)
 
         # Update Status Cards
         self.stat_staff.setText(str(len(persons)))
-        self.stat_conflicts.setText(str(conflict_count))
+        self.stat_teacher_conflicts.setText(str(teacher_conflicts))
+        self.stat_class_conflicts.setText(str(class_conflicts))
         self.stat_schedules.setText(str(self.engine.get_total_schedule_count()))
 
     def get_subject_color(self, subject):
@@ -707,29 +821,16 @@ class MainWindow(QMainWindow):
             return QColor.fromHsl(hue, 100, 230)
 
     def refresh_conflict_table(self, s_map):
-        """Populates the conflict report table."""
+        """Populates the conflict report table and returns conflict counts."""
         self.conflict_table.setRowCount(0)
         
-        # Iterate over all slots in the map
-        # s_map structure: key=(Day, Time), value=[info_dict, info_dict...]
         row_idx = 0
+        teacher_conflicts = 0
+        class_conflicts = 0
         
         for (day, time_slot), infos in s_map.items():
-            # Check for Multiple entries in the same Grade Level (Class Double Booking)
-            # OR Multiple entries for the same Person (Teacher Double Booking)
-            # Note: s_map is global. 
             
-            # Simple heuristic: If multiple people are in the exact same grade/section at the same time
-            # But s_map is bucketed by grade in the grid. Here we have raw data.
-            
-            # Let's filter specifically for Teacher overlaps which are the most critical
-            # This requires grouping by Person ID, which s_map doesn't easily do (it's flat).
-            # However, we can spot Class Overlaps (Same Grade, Same Time, >1 Entry)
-            
-            # Actually, let's just show what the Grades view shows as "CONFLICT"
-            # If multiple teachers are assigned to the SAME Grade Level bucket at same time
-            
-            # Group infos by Grade Level
+            # 1. Check for Class Double Bookings (Same Grade Level & Section)
             grade_groups = {}
             for info in infos:
                 g = info.get('grade_level', 'Unknown')
@@ -738,28 +839,43 @@ class MainWindow(QMainWindow):
             
             for g, group in grade_groups.items():
                 if len(group) > 1:
-                    # CONFLICT FOUND
+                    class_conflicts += 1
                     self.conflict_table.insertRow(row_idx)
-                    
-                    # Column 0: Who/Class
-                    self.conflict_table.setItem(row_idx, 0, QTableWidgetItem(str(g)))
-                    
-                    # Column 1: Day
+                    self.conflict_table.setItem(row_idx, 0, QTableWidgetItem(f"Class: {g}"))
                     self.conflict_table.setItem(row_idx, 1, QTableWidgetItem(str(day)))
-                    
-                    # Column 2: Time
                     self.conflict_table.setItem(row_idx, 2, QTableWidgetItem(str(time_slot)))
-                    
-                    # Column 3: Details
                     names = ", ".join([x['name'] for x in group])
                     msg = f"Double Booked: {names}"
                     item = QTableWidgetItem(msg)
                     is_dark = getattr(self, 'is_dark_mode', False)
-                    conflict_text_color = "#FF8A80" if is_dark else "#C0392B"
-                    item.setForeground(QBrush(QColor(conflict_text_color)))
+                    item.setForeground(QBrush(QColor("#FF8A80" if is_dark else "#C0392B")))
                     self.conflict_table.setItem(row_idx, 3, item)
-                    
                     row_idx += 1
+                    
+            # 2. Check for Teacher Double Bookings (Same Teacher Name)
+            teacher_groups = {}
+            for info in infos:
+                t = info.get('name', 'Unknown Teacher')
+                if t not in teacher_groups: teacher_groups[t] = []
+                teacher_groups[t].append(info)
+                
+            for t, group in teacher_groups.items():
+                if len(group) > 1:
+                    teacher_conflicts += 1
+                    self.conflict_table.insertRow(row_idx)
+                    self.conflict_table.setItem(row_idx, 0, QTableWidgetItem(f"Teacher: {t}"))
+                    self.conflict_table.setItem(row_idx, 1, QTableWidgetItem(str(day)))
+                    self.conflict_table.setItem(row_idx, 2, QTableWidgetItem(str(time_slot)))
+                    
+                    classes = ", ".join([x.get('grade_level', 'Unknown') for x in group])
+                    msg = f"Double Booked: {classes}"
+                    item = QTableWidgetItem(msg)
+                    is_dark = getattr(self, 'is_dark_mode', False)
+                    item.setForeground(QBrush(QColor("#FF8A80" if is_dark else "#C0392B")))
+                    self.conflict_table.setItem(row_idx, 3, item)
+                    row_idx += 1
+
+        return teacher_conflicts, class_conflicts
 
     def refresh_grade_grid(self, grade_key, section_filter=None):
         """Populates the grid for a specific grade view, optionally filtered by section."""
@@ -870,9 +986,9 @@ class MainWindow(QMainWindow):
             else:
                 QMessageBox.warning(self, "Error", f"Could not add '{data['name']}'.\nThis name already exists.")
 
-    def open_add_class_dialog(self):
+    def open_add_class_dialog(self, default_grade=None):
         """Adds a new class to the dropdown list."""
-        d = AddClassDialog(self)
+        d = AddClassDialog(default_grade=default_grade, parent=self)
         if self._exec_with_blur(d):
             data = d.get_data()
             grade = data['grade']

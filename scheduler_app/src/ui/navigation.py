@@ -14,9 +14,9 @@ class NavigationPanel(QTreeWidget):
     # Signal to load a specific class/person schedule (passes database ID)
     class_id_selected = pyqtSignal(int)
     
-    # Signal to filter the main view by a specific section
+    # Signal for when a section is selected
     section_selected = pyqtSignal(str)
-
+    
     def __init__(self, engine):
         """
         Initialize the navigation panel.
@@ -56,7 +56,21 @@ class NavigationPanel(QTreeWidget):
 
         self.clear()
         
-        # --- 2. Grade Level Parent Nodes ---
+        # --- 1. Staff Management (Fixed Node) ---
+        staff_node = QTreeWidgetItem(self, ["👥 Staff Management"])
+        staff_node.setData(0, Qt.ItemDataRole.UserRole, 0) 
+        
+        if staff_node.text(0) in expanded_items:
+            staff_node.setExpanded(True)
+
+        # --- 2. Conflict Report (Dedicated View) ---
+        conflict_node = QTreeWidgetItem(self)
+        conflict_node.setText(0, "⚠️ Conflict Report")
+        conflict_node.setData(0, Qt.ItemDataRole.UserRole, 5) # Stack Index 5
+        # Make it stand out with a soft red color
+        conflict_node.setForeground(0, QBrush(QColor("#E74C3C")))
+
+        # --- 3. Grade Level Parent Nodes ---
         # Map Grade Name -> Stack Index (Matches MainWindow order)
         self.grade_map = {
             "Grade 7": 1,
@@ -65,56 +79,17 @@ class NavigationPanel(QTreeWidget):
             "Grade 10": 4
         }
         
-        # Define default Grades and Sections
-        grades = {
-            "Grade 7": ["Rizal", "Mabini", "Bonifacio"],
-            "Grade 8": ["Luna", "Jacinto", "Silang"],
-            "Grade 9": ["Aquino", "Del Pilar"],
-            "Grade 10": ["Dagohoy", "Lapu-Lapu"]
-        }
-        
-        # Merge dynamically added classes from the database
-        try:
-            db_classes = self.engine.get_unique_grade_levels()
-            for db_c in db_classes:
-                if " - " in db_c:
-                    g, s = db_c.split(" - ", 1)
-                    if g in grades and s not in grades[g]:
-                        grades[g].append(s)
-                    elif g not in grades:
-                        grades[g] = [s]
-        except Exception:
-            pass # Failsafe
-        
         self.grade_items = {}
-        for grade, sections in grades.items():
+        for grade, stack_idx in self.grade_map.items():
             parent = QTreeWidgetItem(self, [grade])
             # Store Stack Index for Page Switching
-            parent.setData(0, Qt.ItemDataRole.UserRole, self.grade_map.get(grade, 1))
+            parent.setData(0, Qt.ItemDataRole.UserRole, stack_idx)
             
             self.grade_items[grade] = parent
             
-            for section in sections:
-                child = QTreeWidgetItem(parent, [section])
-                child.setData(0, Qt.ItemDataRole.UserRole, f"SECTION:{grade} - {section}")
-
             # Restore expanded state for the grade
             if parent.text(0) in expanded_items:
                 parent.setExpanded(True)
-
-        # --- 1. Staff Management (Fixed Node) ---
-        staff_node = QTreeWidgetItem(self, ["👥 Staff Management"])
-        staff_node.setData(0, Qt.ItemDataRole.UserRole, 0) 
-        
-        if staff_node.text(0) in expanded_items:
-            staff_node.setExpanded(True)
-
-        # --- 3. Conflict Report (Dedicated View) ---
-        conflict_node = QTreeWidgetItem(self)
-        conflict_node.setText(0, "⚠️ Conflict Report")
-        conflict_node.setData(0, Qt.ItemDataRole.UserRole, 5) # Stack Index 5
-        # Make it stand out with a soft red color
-        conflict_node.setForeground(0, QBrush(QColor("#E74C3C")))
 
         # --- 4. Populate Children (Class Sections / Persons) ---
         try:
@@ -137,10 +112,7 @@ class NavigationPanel(QTreeWidget):
         if data is None:
             return
 
-        if isinstance(data, str) and data.startswith("SECTION:"):
-            section_name = data.replace("SECTION:", "")
-            self.section_selected.emit(section_name)
-        elif isinstance(data, str) and data.startswith("PERSON:"):
+        if isinstance(data, str) and data.startswith("PERSON:"):
             person_id = int(data.replace("PERSON:", ""))
             self.class_id_selected.emit(person_id)
         elif isinstance(data, int):

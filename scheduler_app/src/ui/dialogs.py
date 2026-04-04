@@ -53,7 +53,7 @@ class AddPersonDialog(QDialog):
 
 class AddClassDialog(QDialog):
     """Popup to create a new class section (e.g. Grade 7 - Rizal)."""
-    def __init__(self, parent=None):
+    def __init__(self, default_grade=None, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Add New Class")
         self.setFixedWidth(300)
@@ -63,6 +63,10 @@ class AddClassDialog(QDialog):
         layout.addWidget(QLabel("Grade Level:"))
         self.grade_combo = QComboBox()
         self.grade_combo.addItems(["Grade 7", "Grade 8", "Grade 9", "Grade 10"])
+        
+        if default_grade:
+            self.grade_combo.setCurrentText(default_grade)
+            
         layout.addWidget(self.grade_combo)
         
         layout.addWidget(QLabel("Section Name:"))
