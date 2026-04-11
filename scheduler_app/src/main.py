@@ -6,10 +6,11 @@ from pathlib import Path
 # This line ensures Python can find the 'src' folder regardless of where you run it from
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QDialog
 from database import init_db
 from engine import DepEdValidator
 from ui.main_window import MainWindow
+from login_manager import init_auth_db, LoginDialog
 
 def main():
     # Set up logging to write to a file in the user's Documents folder
@@ -36,11 +37,17 @@ def main():
     db_path = init_db()
     engine = DepEdValidator(db_path)
     
-    # Launch UI
-    window = MainWindow(engine)
-    window.show()
+    # Initialize Auth and show Login Dialog
+    init_auth_db(db_path)
+    login_dialog = LoginDialog(db_path)
     
-    sys.exit(app.exec())
+    # Launch UI only if login is successful
+    if login_dialog.exec() == QDialog.DialogCode.Accepted:
+        window = MainWindow(engine)
+        window.show()
+        sys.exit(app.exec())
+    else:
+        sys.exit(0)
 
 if __name__ == "__main__":
     main()

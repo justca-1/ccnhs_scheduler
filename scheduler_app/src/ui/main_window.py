@@ -6,6 +6,10 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtGui import QColor, QBrush, QFont, QAction, QIcon
 from PyQt6.QtCore import Qt, pyqtSignal, QSize
 import os
+import sys
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from login_manager import ChangePasswordDialog
 
 try:
     from .dialogs import AddPersonDialog, AddScheduleDialog, PersonScheduleDialog, AddClassDialog
@@ -60,11 +64,35 @@ class MainWindow(QMainWindow):
         self.top_bar.setContentsMargins(0, 10, 10, 0) # Add padding just for the button
         self.top_bar.addStretch() # Pushes the button to the right
         
+        self.change_pwd_btn = QPushButton(" Change Password")
+        self.change_pwd_btn.setFixedSize(140, 36)
+        self.change_pwd_btn.setToolTip("Update Admin Credentials")
+        self.change_pwd_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.change_pwd_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #3498DB; 
+                color: white; 
+                font-weight: bold; 
+                border-radius: 4px;
+            }
+            QPushButton:hover { background-color: #2980B9; }
+        """)
+        self.change_pwd_btn.clicked.connect(self.open_change_password_dialog)
+        self.top_bar.addWidget(self.change_pwd_btn)
+
         self.theme_btn = QPushButton(" Dark Mode")
         self.theme_btn.setFixedSize(120, 36) # Larger size to accommodate text and icon
         self.theme_btn.setToolTip("Toggle Dark/Light Mode")
         self.theme_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.theme_btn.setStyleSheet("font-weight: bold; padding: 5px;")
+        self.theme_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #2C3E50; 
+                color: white; 
+                font-weight: bold; 
+                border-radius: 4px;
+            }
+            QPushButton:hover { background-color: #1A252F; }
+        """)
         
         # Load initial moon icon from an 'icons' folder next to this file
         base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -158,6 +186,10 @@ class MainWindow(QMainWindow):
             self.theme_btn.setToolTip("Toggle Dark Mode")
             self.apply_theme("light_style.qss")
         self.update_theme_colors()  # Instantly update existing item colors
+
+    def open_change_password_dialog(self):
+        dialog = ChangePasswordDialog(self.engine.db_path, "admin", self)
+        self._exec_with_blur(dialog)
 
     def apply_theme(self, stylesheet_name):
         import os
