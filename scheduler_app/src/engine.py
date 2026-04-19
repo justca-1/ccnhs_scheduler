@@ -1,4 +1,5 @@
 import sqlite3
+import logging
 from typing import List, Dict
 from datetime import datetime, timedelta
 from dataclasses import dataclass
@@ -13,6 +14,14 @@ class ScheduleSlot:
     grade_level: str
     subject: str = ""
     room: str = ""
+
+    def __post_init__(self):
+        """Enforces strict zero-padded HH:MM 24-hour format on initialization."""
+        try:
+            self.start_time = datetime.strptime(self.start_time.strip(), "%H:%M").strftime("%H:%M")
+            self.end_time = datetime.strptime(self.end_time.strip(), "%H:%M").strftime("%H:%M")
+        except ValueError:
+            raise ValueError(f"Time must be in 24-hour HH:MM format. Got start='{self.start_time}', end='{self.end_time}'")
 
 @dataclass
 class ValidationResult:
@@ -31,64 +40,50 @@ class ScheduleEngine:
         """Initializes the engine with the path to the local SQLite file."""
         self.db_path = db_path
 
+    def _get_connection(self):
+        """Helper to create a connection and enforce SQLite foreign keys."""
+        conn = sqlite3.connect(self.db_path)
+        conn.execute("PRAGMA foreign_keys = ON;")
+        return conn
+
     # --- PERSON MANAGEMENT ---
 
     def add_person(self, name: str, role: str = "") -> bool:
         """Adds a new person to the database."""
         if not name:
             return False
-        conn = None
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            
-            # Check for duplicates (case-insensitive)
-            cursor.execute("SELECT 1 FROM Person WHERE full_name = ? COLLATE NOCASE", (name,))
-            if cursor.fetchone():
-                return False
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                
+                # Check for duplicates (case-insensitive)
+                cursor.execute("SELECT 1 FROM Person WHERE full_name = ? COLLATE NOCASE", (name,))
+                if cursor.fetchone():
+                    return False
 
-            cursor.execute(
-                "INSERT INTO Person (full_name, role) VALUES (?, ?)", 
-                (name, role)
-            )
-            conn.commit()
-            return True
+                cursor.execute("INSERT INTO Person (full_name, role) VALUES (?, ?)", (name, role))
+                return True
         except sqlite3.Error as e:
-            if conn:
-                conn.rollback()
-            print(f"Database Error (add_person): {e}")
+            logging.error(f"Database Error (add_person): {e}")
             return False
-        finally:
-            if conn:
-                conn.close()
 
     def update_person_name(self, person_id: int, new_name: str) -> bool:
         """Updates the full name of a person."""
         if not new_name:
             return False
-        conn = None
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            cursor.execute(
-                "UPDATE Person SET full_name = ? WHERE person_id = ?", 
-                (new_name, person_id)
-            )
-            conn.commit()
-            return True
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("UPDATE Person SET full_name = ? WHERE person_id = ?", (new_name, person_id))
+                return True
         except sqlite3.Error as e:
-            if conn:
-                conn.rollback()
-            print(f"Update Error: {e}")
+            logging.error(f"Update Error (update_person_name): {e}")
             return False
-        finally:
-            if conn:
-                conn.close()
 
     def get_all_persons(self) -> List[Dict]:
         """Fetches all registered persons as a list of dictionaries."""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
                 cursor.execute("SELECT person_id, full_name, role FROM Person")
@@ -138,7 +133,7 @@ class ScheduleEngine:
                         
                 return ValidationResult(True)
         except sqlite3.Error as e:
-            print(f"Conflict Check Error: {e}")
+            logging.error(f"Conflict Check Error: {e}")
             return ValidationResult(False, f"Database error: {e}", "DATABASE")
 
     def can_assign_batch(self, slots: List[ScheduleSlot]) -> ValidationResult:
@@ -206,24 +201,17 @@ class ScheduleEngine:
             return []
 
     def add_schedule(self, slot: ScheduleSlot) -> bool:
-        conn = None
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            cursor.execute(
-                "INSERT INTO Schedule (person_id, day, start_time, end_time, grade_level, subject, room) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (slot.person_id, slot.day, slot.start_time, slot.end_time, slot.grade_level, slot.subject, slot.room)
-            )
-            conn.commit()
-            return True
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "INSERT INTO Schedule (person_id, day, start_time, end_time, grade_level, subject, room) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (slot.person_id, slot.day, slot.start_time, slot.end_time, slot.grade_level, slot.subject, slot.room)
+                )
+                return True
         except sqlite3.Error as e:
-            if conn:
-                conn.rollback()
-            print(f"Database Error: {e}")
+            logging.error(f"Database Error (add_schedule): {e}")
             return False
-        finally:
-            if conn:
-                conn.close()
 
     def add_schedule_batch(self, slots: List[ScheduleSlot]) -> bool:
         """

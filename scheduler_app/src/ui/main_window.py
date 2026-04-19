@@ -78,6 +78,7 @@ class MainWindow(QMainWindow):
             QPushButton:hover { background-color: #2980B9; }
         """)
         self.change_pwd_btn.clicked.connect(self.open_change_password_dialog)
+        self.change_pwd_btn.hide() # Hidden by default, shown after auth
         self.top_bar.addWidget(self.change_pwd_btn)
 
         self.theme_btn = QPushButton(" Dark Mode")
@@ -124,6 +125,13 @@ class MainWindow(QMainWindow):
         
         # Select first item by default
         self.change_page(0)
+
+    def setup_session(self, user_data):
+        """Configures UI based on the authenticated user."""
+        self.current_user = user_data
+        
+        # Explicitly trigger visibility update after authentication
+        self.change_pwd_btn.show()
 
     def change_page(self, index):
         # Clear filter if navigating directly to a main page via Category click
@@ -188,7 +196,8 @@ class MainWindow(QMainWindow):
         self.update_theme_colors()  # Instantly update existing item colors
 
     def open_change_password_dialog(self):
-        dialog = ChangePasswordDialog(self.engine.db_path, "admin", self)
+        username = getattr(self, 'current_user', {}).get('username', 'admin')
+        dialog = ChangePasswordDialog(self.engine.db_path, username, self)
         self._exec_with_blur(dialog)
 
     def apply_theme(self, stylesheet_name):

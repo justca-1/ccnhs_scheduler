@@ -44,6 +44,7 @@ def main():
     # Launch UI only if login is successful
     if login_dialog.exec() == QDialog.DialogCode.Accepted:
         window = MainWindow(engine)
+        window.setup_session(getattr(login_dialog, 'logged_in_user', {}))
         window.show()
         sys.exit(app.exec())
     else:

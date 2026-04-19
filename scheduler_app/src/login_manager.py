@@ -1,6 +1,7 @@
 import sqlite3
 import hashlib
 import os
+import logging
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QLabel, QLineEdit, 
     QPushButton, QHBoxLayout, QMessageBox
@@ -59,7 +60,7 @@ def verify_login(db_path: str, username: str, password: str) -> bool:
             # Compare the hashes
             return hmac_compare(stored_hash, input_hash)
     except sqlite3.Error as e:
-        print(f"Database error during login: {e}")
+        logging.error(f"Database error during login: {e}")
         return False
 
 def hmac_compare(a: bytes, b: bytes) -> bool:
@@ -77,7 +78,7 @@ def change_password(db_path: str, username: str, new_password: str) -> bool:
             conn.commit()
             return cursor.rowcount > 0
     except sqlite3.Error as e:
-        print(f"Database error during password change: {e}")
+        logging.error(f"Database error during password change: {e}")
         return False
 
 
@@ -162,6 +163,7 @@ class LoginDialog(QDialog):
             return
             
         if verify_login(self.db_path, username, password):
+            self.logged_in_user = {"username": username}
             self.accept() # Unlocks the app
         else:
             QMessageBox.critical(self, "Access Denied", "Invalid username or password.")
@@ -237,6 +239,18 @@ class ChangePasswordDialog(QDialog):
             self.new_pwd_input.setFocus()
             return
             
+        # --- Password Complexity Check ---
+        if len(new_pwd) < 8 or not any(c.isupper() for c in new_pwd) or not any(c.isdigit() for c in new_pwd):
+            QMessageBox.warning(
+                self, 
+                "Weak Password", 
+                "Password must be at least 8 characters long, contain at least 1 uppercase letter, and 1 number."
+            )
+            self.new_pwd_input.clear()
+            self.confirm_pwd_input.clear()
+            self.new_pwd_input.setFocus()
+            return
+
         if not verify_login(self.db_path, self.username, old_pwd):
             QMessageBox.critical(self, "Access Denied", "Incorrect current password.")
             self.old_pwd_input.clear()
