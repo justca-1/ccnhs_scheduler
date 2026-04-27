@@ -2,9 +2,19 @@
 src/database.py - Handles the SQLite database creation and pathing.
 """
 
+import os
+import sys
 import sqlite3
 import logging
 from pathlib import Path
+
+def resource_path(relative_path):
+    """ Get absolute path to resource, works for dev and for PyInstaller """
+    try:
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(os.path.dirname(__file__))
+    return os.path.join(base_path, relative_path)
 
 def get_db_path():
     """Returns the persistent path for the database in the user's Documents folder."""
@@ -23,33 +33,14 @@ def init_db(db_path=None):
     with sqlite3.connect(db_path) as conn:
         cursor = conn.cursor()
         
-        cursor.execute('''CREATE TABLE IF NOT EXISTS Person 
-                         (person_id INTEGER PRIMARY KEY AUTOINCREMENT, 
-                          full_name TEXT, role TEXT)''')
-        
-        # Check carefully that 'grade_level TEXT' is inside the parentheses
-        cursor.execute('''CREATE TABLE IF NOT EXISTS Schedule 
-                         (schedule_id INTEGER PRIMARY KEY AUTOINCREMENT, 
-                          person_id INTEGER, 
-                          day TEXT, 
-                          start_time TEXT, 
-                          end_time TEXT, 
-                          grade_level TEXT, 
-                          subject TEXT,
-                          room TEXT,
-                          FOREIGN KEY(person_id) REFERENCES Person(person_id))''')
-        
-        # Migration: Add 'subject' column if it doesn't exist (for existing DBs)
+        # Execute external schema / migrations file
+        schema_file = resource_path(os.path.join("resources", "schema.sql"))
         try:
-            cursor.execute("ALTER TABLE Schedule ADD COLUMN subject TEXT")
-        except sqlite3.OperationalError:
-            pass # Column likely already exists
-            
-        # Migration: Add 'room' column if it doesn't exist
-        try:
-            cursor.execute("ALTER TABLE Schedule ADD COLUMN room TEXT")
-        except sqlite3.OperationalError:
-            pass # Column likely already exists
-            
+            with open(schema_file, "r", encoding="utf-8") as f:
+                cursor.executescript(f.read())
+            logging.info("Database schema synced successfully.")
+        except FileNotFoundError:
+            logging.error(f"Could not find schema file at {schema_file}.")
+                
         conn.commit()
     return db_path

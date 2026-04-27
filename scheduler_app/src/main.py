@@ -12,6 +12,15 @@ from engine import DepEdValidator
 from ui.main_window import MainWindow
 from login_manager import init_auth_db, LoginDialog
 
+def resource_path(relative_path):
+    """ Get absolute path to resource, works for dev and for PyInstaller """
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(os.path.dirname(__file__))
+    return os.path.join(base_path, relative_path)
+
 def main():
     # Set up logging to write to a file in the user's Documents folder
     log_dir = Path.home() / "Documents" / "CCNHS_Scheduler"
@@ -26,7 +35,7 @@ def main():
     app.setStyle("Fusion") # Consistent look across all PCs
     
     # Load QSS
-    qss_file = os.path.join(os.path.dirname(__file__), "ui", "style.qss")
+    qss_file = resource_path(os.path.join("ui", "style.qss"))
     try:
         with open(qss_file, "r") as f:
             app.setStyleSheet(f.read())
