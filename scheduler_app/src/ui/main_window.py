@@ -50,6 +50,7 @@ class MainWindow(QMainWindow):
         self.sidebar = NavigationPanel(self.engine)
         self.sidebar.page_change_requested.connect(self.change_page)
         self.sidebar.class_id_selected.connect(self.load_schedule)
+        self.sidebar.section_selected.connect(self.on_sidebar_section_selected)
         self.sidebar_layout.addWidget(self.sidebar)
         
         self.main_layout.addWidget(self.sidebar_container, 0) # 0 stretch = stay fixed size
@@ -145,11 +146,30 @@ class MainWindow(QMainWindow):
                 view_data['combo'].blockSignals(False)
             if 'stack' in view_data:
                 view_data['stack'].setCurrentIndex(0)
+            if 'delete_btn' in view_data:
+                view_data['delete_btn'].setEnabled(False)
                 
         self.main_stack.setCurrentIndex(index)
         # Force grid refresh in case we were just viewing a filtered section
         self.refresh_all()
         
+    def on_sidebar_section_selected(self, section_name):
+        """Handles when a specific section is clicked in the sidebar."""
+        for grade, view_data in self.grade_views.items():
+            if section_name.startswith(grade):
+                # Switch to this grade's page FIRST
+                stack_idx = self.sidebar.grade_map.get(grade)
+                if stack_idx is not None:
+                    self.change_page(stack_idx)
+                
+                # THEN set the combo box
+                combo = view_data.get('combo')
+                if combo:
+                    idx = combo.findData(section_name)
+                    if idx >= 0:
+                        combo.setCurrentIndex(idx)
+                break
+
     def on_combo_filter_changed(self, grade_name):
         """Filters the grade view when the dropdown changes."""
         view_data = self.grade_views.get(grade_name)
@@ -161,8 +181,12 @@ class MainWindow(QMainWindow):
         
         if section_data is None:
             view_data['stack'].setCurrentIndex(0)
+            if 'delete_btn' in view_data:
+                view_data['delete_btn'].setEnabled(False)
         else:
             view_data['stack'].setCurrentIndex(1)
+            if 'delete_btn' in view_data:
+                view_data['delete_btn'].setEnabled(True)
             
         self.refresh_all()
 
@@ -444,6 +468,11 @@ class MainWindow(QMainWindow):
             add_class_btn = QPushButton("Add Class")
             add_class_btn.clicked.connect(lambda checked, g=grade_name: self.open_add_class_dialog(g))
             
+            delete_class_btn = QPushButton("Delete Class")
+            delete_class_btn.setStyleSheet("color: #E74C3C;") # Destructive action color (Red)
+            delete_class_btn.setEnabled(False) # Disabled by default since "All Sections" is active
+            delete_class_btn.clicked.connect(lambda checked, g=grade_name: self.delete_selected_class(g))
+            
             filter_lbl = QLabel("Filter Section:")
             filter_lbl.setStyleSheet("color: gray;")
             
@@ -454,6 +483,7 @@ class MainWindow(QMainWindow):
             
             top_layout.addWidget(title_lbl)
             top_layout.addWidget(add_class_btn)
+            top_layout.addWidget(delete_class_btn)
             top_layout.addStretch()
             top_layout.addWidget(filter_lbl)
             top_layout.addWidget(filter_combo)
@@ -495,7 +525,8 @@ class MainWindow(QMainWindow):
                 'grid': grid, 
                 'combo': filter_combo,
                 'stack': grade_stack,
-                'list': sections_list
+                'list': sections_list,
+                'delete_btn': delete_class_btn
             }
             
     def init_conflict_report_ui(self):
@@ -719,10 +750,14 @@ class MainWindow(QMainWindow):
         self.people_table.blockSignals(True)
         
         # --- 0. REFRESH NAVIGATION TREE ---
-        self.sidebar.refresh_navigation()
+        self.sidebar.refresh_navigation(self.known_classes)
         
         # --- 1. REFRESH PERSON TABLE ---
         persons = self.engine.get_all_persons()
+        
+        # Sort persons alphabetically by their full name (case-insensitive)
+        persons.sort(key=lambda p: p['full_name'].lower())
+        
         self.people_table.setRowCount(len(persons))
         
         for i, p in enumerate(persons):
@@ -766,7 +801,7 @@ class MainWindow(QMainWindow):
         
         # 1. Update Known Classes & Distribute to Grades
         # We categorize classes into buckets: "Grade 7", "Grade 8", etc.
-        grade_buckets = { f"Grade {i}": set() for i in range(7, 11) }
+        grade_buckets = { grade: set() for grade in self.grade_views.keys() }
         
         all_classes = set(self.known_classes)
         for infos in s_map.values():
@@ -776,12 +811,10 @@ class MainWindow(QMainWindow):
                     self.known_classes.add(info['grade_level'])
 
         for c_name in all_classes:
-            # Simple heuristic to assign class to a grade bucket
-            for i in range(7, 11):
-                # Matches "Grade 7", "7-A", "7-Rizal", etc.
-                if c_name.startswith(str(i)) or c_name.startswith(f"Grade {i}"):
-                    if f"Grade {i}" in grade_buckets:
-                        grade_buckets[f"Grade {i}"].add(c_name)
+            # Safely assign the class to the correct grade bucket based directly on UI keys
+            for grade in self.grade_views.keys():
+                if c_name.startswith(grade):
+                    grade_buckets[grade].add(c_name)
                     break
 
         # --- Update Section Dropdowns ---
@@ -789,6 +822,7 @@ class MainWindow(QMainWindow):
             combo = view_data.get('combo')
             sec_list = view_data.get('list')
             stack = view_data.get('stack')
+            delete_btn = view_data.get('delete_btn')
             if combo and sec_list and stack:
                 current_text = combo.currentText()
                 combo.blockSignals(True)
@@ -800,7 +834,13 @@ class MainWindow(QMainWindow):
                 
                 sections = sorted(list(grade_buckets.get(grade, set())))
                 for sec in sections:
-                    display_name = sec.split(" - ")[1] if " - " in sec else sec
+                    if " - " in sec:
+                        display_name = sec.split(" - ", 1)[1]
+                    else:
+                        display_name = sec.replace(grade, "").strip(" -")
+                        if not display_name:
+                            display_name = sec
+                            
                     combo.addItem(display_name, userData=sec)
                     
                     list_item = QListWidgetItem(display_name)
@@ -818,8 +858,12 @@ class MainWindow(QMainWindow):
                     
                 if combo.currentData() is None:
                     stack.setCurrentIndex(0)
+                    if delete_btn:
+                        delete_btn.setEnabled(False)
                 else:
                     stack.setCurrentIndex(1)
+                    if delete_btn:
+                        delete_btn.setEnabled(True)
                     
                 combo.blockSignals(False)
                 sec_list.blockSignals(False)
@@ -1048,6 +1092,45 @@ class MainWindow(QMainWindow):
                 self.show_message(f"Class '{full_class_name}' added.")
             else:
                 self.show_message(f"Class '{full_class_name}' already exists.")
+
+    def delete_selected_class(self, grade_name):
+        """Deletes the currently selected class section from the dropdown."""
+        view_data = self.grade_views.get(grade_name)
+        if not view_data: return
+        
+        combo = view_data['combo']
+        section_data = combo.currentData()
+        
+        if section_data is None:
+            QMessageBox.warning(self, "Select Class", "Please select a specific section from the dropdown to delete.")
+            return
+            
+        confirm = QMessageBox.warning(
+            self, "Confirm Delete", 
+            f"Are you sure you want to delete the class '{section_data}'?\n\nThis will also remove all scheduled times for this class. This action cannot be undone.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        
+        if confirm == QMessageBox.StandardButton.Yes:
+            try:
+                import sqlite3
+                with sqlite3.connect(self.engine.db_path) as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("DELETE FROM Schedule WHERE grade_level = ?", (section_data,))
+                    conn.commit()
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Database error: {e}")
+                return
+                
+            if section_data in self.known_classes:
+                self.known_classes.remove(section_data)
+                
+            if self.current_section_filter == section_data:
+                self.current_section_filter = None
+                
+            self.refresh_all()
+            self.show_message(f"Class '{section_data}' deleted.")
 
     def open_add_schedule_dialog(self):
         p_list = self.engine.get_all_persons()
