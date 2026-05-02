@@ -473,20 +473,16 @@ class MainWindow(QMainWindow):
             delete_class_btn.setEnabled(False) # Disabled by default since "All Sections" is active
             delete_class_btn.clicked.connect(lambda checked, g=grade_name: self.delete_selected_class(g))
             
-            filter_lbl = QLabel("Filter Section:")
-            filter_lbl.setStyleSheet("color: gray;")
-            
-            filter_combo = QComboBox()
+            filter_combo = QComboBox(container)
             filter_combo.setFixedWidth(200)
             filter_combo.addItem("All Sections", userData=None)
             filter_combo.currentIndexChanged.connect(lambda idx, g=grade_name: self.on_combo_filter_changed(g))
+            filter_combo.hide()
             
             top_layout.addWidget(title_lbl)
             top_layout.addWidget(add_class_btn)
             top_layout.addWidget(delete_class_btn)
             top_layout.addStretch()
-            top_layout.addWidget(filter_lbl)
-            top_layout.addWidget(filter_combo)
             
             layout.addLayout(top_layout)
 
@@ -636,6 +632,10 @@ class MainWindow(QMainWindow):
         view_action.triggered.connect(lambda: self.on_person_double_clicked(index.row(), 0))
         menu.addAction(view_action)
 
+        clear_sched_action = QAction("Clear This Teacher's Schedule", self)
+        clear_sched_action.triggered.connect(lambda: self.clear_teacher_schedule(index.row()))
+        menu.addAction(clear_sched_action)
+
         menu.exec(self.people_table.viewport().mapToGlobal(pos))
 
     def handle_rename_context(self, row):
@@ -646,6 +646,28 @@ class MainWindow(QMainWindow):
             p_id = int(id_item.text())
             name = name_item.text().replace("⚠️ ", "")
             self.open_rename_dialog(p_id, name)
+
+    def clear_teacher_schedule(self, row):
+        """Clears all schedules for the selected teacher."""
+        id_item = self.people_table.item(row, 0)
+        name_item = self.people_table.item(row, 1)
+        if id_item and name_item:
+            p_id = int(id_item.text())
+            name = name_item.text().replace("⚠️ ", "")
+            
+            confirm = QMessageBox.warning(
+                self, "Clear Schedule", 
+                f"Are you sure you want to clear all schedules for {name}?\n\nThis action cannot be undone.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
+            )
+            
+            if confirm == QMessageBox.StandardButton.Yes:
+                if self.engine.clear_person_schedule(p_id):
+                    self.refresh_all()
+                    self.show_message(f"Cleared schedules for {name}.")
+                else:
+                    QMessageBox.critical(self, "Error", "Failed to clear the schedule from the database.")
 
     def open_rename_dialog(self, person_id, current_name):
         """Opens a blurred popup to rename the person."""
@@ -1095,14 +1117,10 @@ class MainWindow(QMainWindow):
 
     def delete_selected_class(self, grade_name):
         """Deletes the currently selected class section from the dropdown."""
-        view_data = self.grade_views.get(grade_name)
-        if not view_data: return
+        section_data = self.current_section_filter
         
-        combo = view_data['combo']
-        section_data = combo.currentData()
-        
-        if section_data is None:
-            QMessageBox.warning(self, "Select Class", "Please select a specific section from the dropdown to delete.")
+        if not section_data or not section_data.startswith(grade_name):
+            QMessageBox.warning(self, "Select Class", "Please select a specific section to delete.")
             return
             
         confirm = QMessageBox.warning(

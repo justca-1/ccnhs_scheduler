@@ -419,6 +419,24 @@ class ScheduleEngine:
             if conn:
                 conn.close()
 
+    def clear_person_schedule(self, person_id: int) -> bool:
+        """Deletes all rows from the Schedule table for a specific person."""
+        conn = None
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM Schedule WHERE person_id = ?", (person_id,))
+            conn.commit()
+            return True
+        except sqlite3.Error as e:
+            if conn:
+                conn.rollback()
+            print(f"Clear Person Schedule Error: {e}")
+            return False
+        finally:
+            if conn:
+                conn.close()
+
     def get_total_schedule_count(self) -> int:
         """Returns the total number of busy blocks (rows) in the Schedule table."""
         try:
