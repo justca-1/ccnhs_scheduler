@@ -140,10 +140,6 @@ class MainWindow(QMainWindow):
         
         # Reset all combos to "All Sections" without immediately triggering a refresh
         for view_data in self.grade_views.values():
-            if 'combo' in view_data:
-                view_data['combo'].blockSignals(True)
-                view_data['combo'].setCurrentIndex(0)
-                view_data['combo'].blockSignals(False)
             if 'stack' in view_data:
                 view_data['stack'].setCurrentIndex(0)
             if 'delete_btn' in view_data:
@@ -157,48 +153,25 @@ class MainWindow(QMainWindow):
         """Handles when a specific section is clicked in the sidebar."""
         for grade, view_data in self.grade_views.items():
             if section_name.startswith(grade):
-                # Switch to this grade's page FIRST
+                # Switch to this grade's page directly to avoid clearing the filter
                 stack_idx = self.sidebar.grade_map.get(grade)
                 if stack_idx is not None:
-                    self.change_page(stack_idx)
+                    self.main_stack.setCurrentIndex(stack_idx)
+                    
+                # Apply the filter and switch to the Timetable (Index 1)
+                self.current_section_filter = section_name
                 
-                # THEN set the combo box
-                combo = view_data.get('combo')
-                if combo:
-                    idx = combo.findData(section_name)
-                    if idx >= 0:
-                        combo.setCurrentIndex(idx)
+                if 'stack' in view_data:
+                    view_data['stack'].setCurrentIndex(1)
+                if 'delete_btn' in view_data:
+                    view_data['delete_btn'].setEnabled(True)
+                
+                self.refresh_all()
                 break
 
-    def on_combo_filter_changed(self, grade_name):
-        """Filters the grade view when the dropdown changes."""
-        view_data = self.grade_views.get(grade_name)
-        if not view_data: return
-        
-        combo = view_data['combo']
-        section_data = combo.currentData()
-        self.current_section_filter = section_data
-        
-        if section_data is None:
-            view_data['stack'].setCurrentIndex(0)
-            if 'delete_btn' in view_data:
-                view_data['delete_btn'].setEnabled(False)
-        else:
-            view_data['stack'].setCurrentIndex(1)
-            if 'delete_btn' in view_data:
-                view_data['delete_btn'].setEnabled(True)
-            
-        self.refresh_all()
-
     def on_section_list_item_clicked(self, item, grade_name):
-        view_data = self.grade_views.get(grade_name)
-        if not view_data: return
-        combo = view_data['combo']
         section_data = item.data(Qt.ItemDataRole.UserRole)
-        
-        idx = combo.findData(section_data)
-        if idx >= 0:
-            combo.setCurrentIndex(idx)
+        self.on_sidebar_section_selected(section_data)
 
     def show_message(self, text, duration=3000):
         """Helper to show temporary messages (like 'Saved!') on the status bar."""
@@ -519,7 +492,6 @@ class MainWindow(QMainWindow):
             
             self.grade_views[grade_name] = {
                 'grid': grid, 
-                'combo': filter_combo,
                 'stack': grade_stack,
                 'list': sections_list,
                 'delete_btn': delete_class_btn
@@ -558,9 +530,7 @@ class MainWindow(QMainWindow):
         grid.setRowCount(len(time_slots))
         grid.setVerticalHeaderLabels(time_slots)
         grid.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        grid.verticalHeader().setDefaultSectionSize(35) # Compact rows
-        grid.verticalHeader().setFixedWidth(60) # Compact time column
-        grid.verticalHeader().setDefaultSectionSize(50) # Increase this value to make rows taller
+        grid.verticalHeader().setDefaultSectionSize(65) # Increase this value to make rows taller
         grid.verticalHeader().setFixedWidth(70) # Increase this value to make the time column wider
         grid.setShowGrid(False) # Hide default grid lines for card-like look
         grid.setFrameShape(QTableWidget.Shape.NoFrame) # Snaps perfectly to the side panel
@@ -841,15 +811,10 @@ class MainWindow(QMainWindow):
 
         # --- Update Section Dropdowns ---
         for grade, view_data in self.grade_views.items():
-            combo = view_data.get('combo')
             sec_list = view_data.get('list')
             stack = view_data.get('stack')
             delete_btn = view_data.get('delete_btn')
-            if combo and sec_list and stack:
-                current_text = combo.currentText()
-                combo.blockSignals(True)
-                combo.clear()
-                combo.addItem("All Sections", userData=None)
+            if sec_list and stack:
                 
                 sec_list.blockSignals(True)
                 sec_list.clear()
@@ -863,31 +828,18 @@ class MainWindow(QMainWindow):
                         if not display_name:
                             display_name = sec
                             
-                    combo.addItem(display_name, userData=sec)
-                    
                     list_item = QListWidgetItem(display_name)
                     list_item.setData(Qt.ItemDataRole.UserRole, sec)
                     list_item.setFont(QFont("Arial", 12))
                     sec_list.addItem(list_item)
                 
-                idx = combo.findText(current_text)
-                if idx >= 0:
-                    combo.setCurrentIndex(idx)
-                else:
-                    if self.current_section_filter and self.current_section_filter.startswith(grade):
-                        self.current_section_filter = None
-                    combo.setCurrentIndex(0)
-                    
-                if combo.currentData() is None:
-                    stack.setCurrentIndex(0)
-                    if delete_btn:
-                        delete_btn.setEnabled(False)
-                else:
+                if self.current_section_filter and self.current_section_filter.startswith(grade):
                     stack.setCurrentIndex(1)
-                    if delete_btn:
-                        delete_btn.setEnabled(True)
-                    
-                combo.blockSignals(False)
+                    if delete_btn: delete_btn.setEnabled(True)
+                else:
+                    stack.setCurrentIndex(0)
+                    if delete_btn: delete_btn.setEnabled(False)
+
                 sec_list.blockSignals(False)
         
         # 2. Update Grids for 7-10
@@ -1022,14 +974,17 @@ class MainWindow(QMainWindow):
                 subject = info.get('subject', '')
                 room = info.get('room', '')
                 name = info['name']
+                time_range = info.get('range', '')
                 is_conflict = len(busy_infos) > 1
                 
                 if is_conflict:
-                    display_text = "⚠️ CONFLICT\n" + "\n".join([i['name'] for i in busy_infos])
+                    display_text = "⚠️ CONFLICT\n" + "\n".join([f"{i['name']} ({i.get('range', '')})" for i in busy_infos])
                 else:
                     display_text = subject if subject else name
                     if subject and name:
                         display_text += f"\n({name})"
+                    if time_range:
+                        display_text += f"\n{time_range}"
                     if room:
                         display_text += f"\n[{room}]"
 
@@ -1052,7 +1007,7 @@ class MainWindow(QMainWindow):
                     text_color = QColor("#FFFFFF") if getattr(self, 'is_dark_mode', False) else QColor("#2c3e50")
                     item.setForeground(QBrush(text_color)) # Dark text
                     item.setFont(QFont("Arial", weight=QFont.Weight.Bold))
-                    item.setToolTip(f"Subject: {subject}\nTeacher: {name}\nRoom: {room}\nTime: {t_val}")
+                    item.setToolTip(f"Subject: {subject}\nTeacher: {name}\nRoom: {room}\nTime: {time_range}")
                 
                 grid.setItem(row, col, item)
 
@@ -1182,6 +1137,12 @@ class MainWindow(QMainWindow):
             
             if self.engine.add_schedule_batch(slots_to_add):
                 self.show_message(f"Successfully added {len(slots_to_add)} days.")
+                
+                # Bridge the Model-View gap visually by navigating to the updated section
+                target_section = res.get('grade_level')
+                if target_section:
+                    self.on_sidebar_section_selected(target_section)
+                    
                 self.refresh_all()
 
     def filter_people_table(self, text):

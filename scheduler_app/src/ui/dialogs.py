@@ -287,8 +287,8 @@ class PersonScheduleDialog(QDialog):
         self.grid.setVerticalHeaderLabels(self.time_slots)
         
         # Increase dimensions for better readability
-        self.grid.verticalHeader().setDefaultSectionSize(30)
-        self.grid.verticalHeader().setFixedWidth(65)
+        self.grid.verticalHeader().setDefaultSectionSize(65)
+        self.grid.verticalHeader().setFixedWidth(70)
         
         self.grid.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         layout.addWidget(self.grid)
@@ -301,27 +301,96 @@ class PersonScheduleDialog(QDialog):
         layout.addWidget(close_btn)
 
     def load_data(self, engine, person_id):
+        from datetime import datetime
+        
         # Reuse the engine's map logic, filtered by this person
         s_map = engine.get_weekly_schedule_map(person_id=person_id)
         days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
         
-        for row, t_val in enumerate(self.time_slots):
-            for col, d_val in enumerate(days):
+        self.grid.clearContents()
+        self.grid.clearSpans()
+        
+        for col, d_val in enumerate(days):
+            row = 0
+            while row < len(self.time_slots):
+                t_val = self.time_slots[row]
                 infos = s_map.get((d_val, t_val), [])
                 
-                if infos:
-                    # Show Grade Level and Role
-                    text = "\n".join([f"{x['grade_level']} ({x['role']})" for x in infos])
-                    item = QTableWidgetItem(text)
-                    item.setBackground(QBrush(QColor("#C8E6C9")))
-                    item.setForeground(QBrush(QColor("#121212")))
-                    item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                if not infos:
+                    row += 1
+                    continue
                     
-                    if len(infos) > 1:
-                         is_dark = getattr(self.parent(), 'is_dark_mode', False)
-                         conflict_color = "#FF8A80" if is_dark else "#FF7043"
-                         item.setBackground(QBrush(QColor(conflict_color))) # Conflict color
-                         item.setForeground(QBrush(QColor("white")))
-                         item.setText(text + "\n(Double Booked!)")
+                is_conflict = len(infos) > 1
+                
+                # --- Calculate Merge Span ---
+                span_height = 1
+                if not is_conflict:
+                    info = infos[0]
+                    for next_r in range(row + 1, len(self.time_slots)):
+                        next_t = self.time_slots[next_r]
+                        next_infos = s_map.get((d_val, next_t), [])
+                        
+                        if len(next_infos) == 1 and \
+                           next_infos[0].get('grade_level', '') == info.get('grade_level', '') and \
+                           next_infos[0].get('subject', '') == info.get('subject', ''):
+                            span_height += 1
+                        else:
+                            break
+                            
+                # --- Build Display Text ---
+                if is_conflict:
+                    text = "\n".join([f"{x['grade_level']} ({x['role']})\n{x['range']}" for x in infos])
+                    text += "\n(Double Booked!)"
+                else:
+                    info = infos[0]
+                    # Calculate true total minutes across the entire merged span
+                    min_t = None
+                    max_t = None
+                    for r in range(row, row + span_height):
+                        t_slot = self.time_slots[r]
+                        for x in s_map.get((d_val, t_slot), []):
+                            if x.get('grade_level', '') == info.get('grade_level', ''):
+                                try:
+                                    t1 = datetime.strptime(x['range'].split(" - ")[0], "%H:%M")
+                                    t2 = datetime.strptime(x['range'].split(" - ")[1], "%H:%M")
+                                    if min_t is None or t1 < min_t: min_t = t1
+                                    if max_t is None or t2 > max_t: max_t = t2
+                                except Exception:
+                                    pass
+                                    
+                    if min_t and max_t:
+                        duration_mins = int((max_t - min_t).total_seconds() / 60)
+                        duration_text = f"{duration_mins} mins"
+                    else:
+                        duration_text = info.get('range', '')
+                        
+                    text = f"{info['grade_level']} ({info['role']})\n{duration_text}"
+                    if info.get('subject'):
+                        text += f"\n{info['subject']}"
+                        
+                item = QTableWidgetItem(text)
+                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                
+                if is_conflict:
+                    is_dark = getattr(self.parent(), 'is_dark_mode', False)
+                    conflict_color = "#FF8A80" if is_dark else "#FF7043"
+                    item.setBackground(QBrush(QColor(conflict_color)))
+                    item.setForeground(QBrush(QColor("white")))
+                else:
+                    # Generate varying colors based on the Grade Level (instead of subject)
+                    val = sum(map(ord, info.get('grade_level', '')))
+                    hue = (val * 137) % 360
+                    is_dark = getattr(self.parent(), 'is_dark_mode', False)
                     
-                    self.grid.setItem(row, col, item)
+                    bg_color = QColor.fromHsl(hue, 120 if is_dark else 100, 80 if is_dark else 230)
+                    text_color = QColor("#FFFFFF") if is_dark else QColor("#121212")
+                    
+                    item.setBackground(QBrush(bg_color))
+                    item.setForeground(QBrush(text_color))
+                    
+                self.grid.setItem(row, col, item)
+                
+                if span_height > 1:
+                    self.grid.setSpan(row, col, span_height, 1)
+                    
+                row += span_height
