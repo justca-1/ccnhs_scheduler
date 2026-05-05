@@ -62,6 +62,7 @@ class ScheduleEngine:
                     return False
 
                 cursor.execute("INSERT INTO Person (full_name, role) VALUES (?, ?)", (name, role))
+                conn.commit()
                 return True
         except sqlite3.Error as e:
             logging.error(f"Database Error (add_person): {e}")
@@ -75,6 +76,7 @@ class ScheduleEngine:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("UPDATE Person SET full_name = ? WHERE person_id = ?", (new_name, person_id))
+                conn.commit()
                 return True
         except sqlite3.Error as e:
             logging.error(f"Update Error (update_person_name): {e}")
@@ -182,7 +184,7 @@ class ScheduleEngine:
                                 
                 return ValidationResult(True)
         except sqlite3.Error as e:
-            print(f"Batch Conflict Check Error: {e}")
+            logging.error(f"Batch Conflict Check Error: {e}")
             return ValidationResult(False, f"Database error: {e}", "DATABASE")
 
     def get_conflict_details(self, person_id: int, day: str, start: str, end: str) -> List[Dict]:
@@ -197,7 +199,7 @@ class ScheduleEngine:
                 cursor.execute(query, (person_id, day, end, start))
                 return [dict(row) for row in cursor.fetchall()]
         except sqlite3.Error as e:
-            print(f"Conflict Fetch Error: {e}")
+            logging.error(f"Conflict Fetch Error: {e}")
             return []
 
     def add_schedule(self, slot: ScheduleSlot) -> bool:
@@ -208,6 +210,7 @@ class ScheduleEngine:
                     "INSERT INTO Schedule (person_id, day, start_time, end_time, grade_level, subject, room) VALUES (?, ?, ?, ?, ?, ?, ?)",
                     (slot.person_id, slot.day, slot.start_time, slot.end_time, slot.grade_level, slot.subject, slot.room)
                 )
+                conn.commit()
                 return True
         except sqlite3.Error as e:
             logging.error(f"Database Error (add_schedule): {e}")
@@ -236,7 +239,7 @@ class ScheduleEngine:
         except sqlite3.Error as e:
             if conn:
                 conn.rollback()
-            print(f"Batch Database Error: {e}")
+            logging.error(f"Batch Database Error: {e}")
             return False
         finally:
             if conn:
@@ -321,7 +324,7 @@ class ScheduleEngine:
             
             return schedule_map
         except sqlite3.Error as e:
-            print(f"Database error in get_weekly_schedule_map: {e}")
+            logging.error(f"Database error in get_weekly_schedule_map: {e}")
             return {}
 
     def validate_workload(self, person_id: int) -> dict:
@@ -359,7 +362,7 @@ class ScheduleEngine:
             stats["overloaded"] = [d for d, m in stats["daily"].items() if m > 360]
             return stats
         except sqlite3.Error as e:
-            print(f"Workload Calc Error: {e}")
+            logging.error(f"Workload Calc Error: {e}")
             return stats
 
     def clear_all_data(self) -> bool:
@@ -395,7 +398,7 @@ class ScheduleEngine:
         except sqlite3.Error as e:
             if conn:
                 conn.rollback()
-            print(f"Delete Error: {e}")
+            logging.error(f"Delete Error: {e}")
             return False
         finally:
             if conn:
@@ -431,7 +434,7 @@ class ScheduleEngine:
         except sqlite3.Error as e:
             if conn:
                 conn.rollback()
-            print(f"Clear Person Schedule Error: {e}")
+            logging.error(f"Clear Person Schedule Error: {e}")
             return False
         finally:
             if conn:
@@ -466,7 +469,7 @@ class ScheduleEngine:
                 data['schedules'] = [dict(row) for row in cursor.fetchall()]
                 
         except sqlite3.Error as e:
-            print(f"Backup Error: {e}")
+            logging.error(f"Backup Error: {e}")
             return None
         return data
 
@@ -497,7 +500,7 @@ class ScheduleEngine:
         except sqlite3.Error as e:
             if conn:
                 conn.rollback()
-            print(f"Restore Error: {e}")
+            logging.error(f"Restore Error: {e}")
             return False
         finally:
             if conn:
@@ -555,5 +558,5 @@ class DepEdValidator(ScheduleEngine):
             return total_points
 
         except sqlite3.Error as e:
-            print(f"DepEd Validation Error: {e}")
+            logging.error(f"DepEd Validation Error: {e}")
             return 0.0

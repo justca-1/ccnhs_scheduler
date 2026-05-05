@@ -1167,11 +1167,8 @@ class MainWindow(QMainWindow):
                 return
 
             from engine import ScheduleSlot
-            # --- THE FIX IS HERE ---
-            # 'res' now contains a LIST of days called 'days'
-            success_count = 0
+            slots_to_add = []
             for day_name in res['days']:
-                # Pass 'day_name' from the loop into the engine
                 slot = ScheduleSlot(
                     person_id=res['person_id'],
                     day=day_name,
@@ -1181,11 +1178,10 @@ class MainWindow(QMainWindow):
                     subject=res['subject'],
                     room=res['room']
                 )
-                if self.engine.add_schedule(slot):
-                    success_count += 1
+                slots_to_add.append(slot)
             
-            if success_count > 0:
-                self.show_message(f"Successfully added {success_count} days.")
+            if self.engine.add_schedule_batch(slots_to_add):
+                self.show_message(f"Successfully added {len(slots_to_add)} days.")
                 self.refresh_all()
 
     def filter_people_table(self, text):
