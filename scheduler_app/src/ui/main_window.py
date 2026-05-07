@@ -879,6 +879,22 @@ class MainWindow(QMainWindow):
         else:
             return QColor.fromHsl(hue, 100, 230)
 
+    @staticmethod
+    def calculate_duration(start_index: int, end_index: int, slot_duration: int = 30) -> int:
+        """
+        Calculates the duration in minutes based on grid row indices.
+        
+        Args:
+            start_index (int): The grid row index where the class starts.
+            end_index (int): The grid row index where the class ends.
+            slot_duration (int): The duration of a single slot in minutes (default is 30).
+            
+        Returns:
+            int: The total duration in minutes.
+        """
+        duration_minutes = (end_index - start_index) * slot_duration
+        return duration_minutes
+
     def refresh_conflict_table(self, s_map):
         """Populates the conflict report table and returns conflict counts."""
         self.conflict_table.setRowCount(0)
@@ -938,6 +954,7 @@ class MainWindow(QMainWindow):
 
     def refresh_grade_grid(self, grade_key, section_filter=None):
         """Populates the grid for a specific grade view, optionally filtered by section."""
+        from datetime import datetime
         view_data = self.grade_views.get(grade_key)
         if not view_data: return 0
         
@@ -969,49 +986,13 @@ class MainWindow(QMainWindow):
                     row += 1
                     continue
 
-                # --- 1. Determine Content ---
                 info = busy_infos[0]
                 subject = info.get('subject', '')
                 room = info.get('room', '')
                 name = info['name']
-                time_range = info.get('range', '')
                 is_conflict = len(busy_infos) > 1
                 
-                if is_conflict:
-                    display_text = "⚠️ CONFLICT\n" + "\n".join([f"{i['name']} ({i.get('range', '')})" for i in busy_infos])
-                else:
-                    display_text = subject if subject else name
-                    if subject and name:
-                        display_text += f"\n({name})"
-                    if time_range:
-                        display_text += f"\n{time_range}"
-                    if room:
-                        display_text += f"\n[{room}]"
-
-                item = QTableWidgetItem(display_text)
-                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                item.setFlags(item.flags() ^ Qt.ItemFlag.ItemIsEditable)
-                
-                # --- 2. Styling & Color Coding ---
-                if is_conflict:
-                    is_dark = getattr(self, 'is_dark_mode', False)
-                    conflict_bg_color = "#FF8A80" if is_dark else "#FF7043"
-                    item.setBackground(QBrush(QColor(conflict_bg_color)))
-                    item.setForeground(QBrush(QColor("white")))
-                    item.setToolTip("⚠️ Multiple people scheduled")
-                    local_conflicts += 1
-                else:
-                    # Dynamic Color based on Subject
-                    bg_color = self.get_subject_color(subject)
-                    item.setBackground(QBrush(bg_color))
-                    text_color = QColor("#FFFFFF") if getattr(self, 'is_dark_mode', False) else QColor("#2c3e50")
-                    item.setForeground(QBrush(text_color)) # Dark text
-                    item.setFont(QFont("Arial", weight=QFont.Weight.Bold))
-                    item.setToolTip(f"Subject: {subject}\nTeacher: {name}\nRoom: {room}\nTime: {time_range}")
-                
-                grid.setItem(row, col, item)
-
-                # --- 3. Calculate Merge Span ---
+                # --- 1. Calculate Merge Span ---
                 # Look ahead to see if the next slots are the exact same class
                 span_height = 1
                 if not is_conflict:
@@ -1030,7 +1011,51 @@ class MainWindow(QMainWindow):
                             span_height += 1
                         else:
                             break
+
+                # --- 2. Determine Content ---
+                if is_conflict:
+                    display_text = "⚠️ CONFLICT\n" + "\n".join([f"{i['name']} ({i.get('range', '')})" for i in busy_infos])
+                else:
+                    duration_mins = self.calculate_duration(row, row + span_height)
+
+                    if duration_mins > 0:
+                        time_range = f"{duration_mins} mins"
+                    else:
+                        time_range = info.get('range', '')
+
+                    display_text = subject if subject else name
+                    if subject and name:
+                        display_text += f"\n({name})"
+                    if time_range:
+                        display_text += f"\n{time_range}"
+                    if room:
+                        display_text += f"\n[{room}]"
+
+                item = QTableWidgetItem(display_text)
+                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                item.setFlags(item.flags() ^ Qt.ItemFlag.ItemIsEditable)
                 
+                # --- 3. Styling & Color Coding ---
+                if is_conflict:
+                    is_dark = getattr(self, 'is_dark_mode', False)
+                    conflict_bg_color = "#FF8A80" if is_dark else "#FF7043"
+                    item.setBackground(QBrush(QColor(conflict_bg_color)))
+                    item.setForeground(QBrush(QColor("white")))
+                    item.setToolTip("⚠️ Multiple people scheduled")
+                    local_conflicts += 1
+                else:
+                    # Dynamic Color based on Subject
+                    bg_color = self.get_subject_color(subject)
+                    item.setBackground(QBrush(bg_color))
+                    text_color = QColor("#FFFFFF") if getattr(self, 'is_dark_mode', False) else QColor("#2c3e50")
+                    item.setForeground(QBrush(text_color)) # Dark text
+                    item.setFont(QFont("Arial", weight=QFont.Weight.Bold))
+                    original_time = info.get('range', '')
+                    item.setToolTip(f"Subject: {subject}\nTeacher: {name}\nRoom: {room}\nTime: {original_time}")
+                
+                grid.setItem(row, col, item)
+
+                # --- 4. Apply Merge Span ---
                 if span_height > 1:
                     grid.setSpan(row, col, span_height, 1)
                 

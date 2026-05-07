@@ -287,8 +287,8 @@ class PersonScheduleDialog(QDialog):
         self.grid.setVerticalHeaderLabels(self.time_slots)
         
         # Increase dimensions for better readability
-        self.grid.verticalHeader().setDefaultSectionSize(65)
-        self.grid.verticalHeader().setFixedWidth(70)
+        self.grid.verticalHeader().setDefaultSectionSize(55)
+        self.grid.verticalHeader().setFixedWidth(60)
         
         self.grid.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         layout.addWidget(self.grid)
@@ -344,22 +344,24 @@ class PersonScheduleDialog(QDialog):
                 else:
                     info = infos[0]
                     # Calculate true total minutes across the entire merged span
-                    min_t = None
-                    max_t = None
+                    unique_ranges = set()
                     for r in range(row, row + span_height):
                         t_slot = self.time_slots[r]
                         for x in s_map.get((d_val, t_slot), []):
                             if x.get('grade_level', '') == info.get('grade_level', ''):
-                                try:
-                                    t1 = datetime.strptime(x['range'].split(" - ")[0], "%H:%M")
-                                    t2 = datetime.strptime(x['range'].split(" - ")[1], "%H:%M")
-                                    if min_t is None or t1 < min_t: min_t = t1
-                                    if max_t is None or t2 > max_t: max_t = t2
-                                except Exception:
-                                    pass
+                                unique_ranges.add(x.get('range', ''))
                                     
-                    if min_t and max_t:
-                        duration_mins = int((max_t - min_t).total_seconds() / 60)
+                    duration_mins = 0
+                    for rng in unique_ranges:
+                        if not rng: continue
+                        try:
+                            t1 = datetime.strptime(rng.split(" - ")[0], "%H:%M")
+                            t2 = datetime.strptime(rng.split(" - ")[1], "%H:%M")
+                            duration_mins += int((t2 - t1).total_seconds() / 60)
+                        except Exception:
+                            pass
+                            
+                    if duration_mins > 0:
                         duration_text = f"{duration_mins} mins"
                     else:
                         duration_text = info.get('range', '')
